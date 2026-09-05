@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.7.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.8.0</title>
+<!-- Playful display + UI fonts (loaded by the tablet browser) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Bangers&display=swap" rel="stylesheet">
 <style>
   :root { --safe-b: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -46,7 +50,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.7.0</div>
+  <div id="note">v0.8.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -62,11 +66,11 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.7.0
+// CroakyMon Gotta Catch Them All! — v0.8.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 const W = 360, H = 640;
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -115,7 +119,7 @@ const Mon3D = (() => {
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
     // Lights: key + fill + rim, tuned for saturated cartoon materials.
-    // Values increased for v0.7.0 — earlier setup was reading dark on OLED tablets.
+    // Values increased for v0.8.0 — earlier setup was reading dark on OLED tablets.
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
@@ -412,7 +416,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.7.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.8.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -590,13 +594,17 @@ function ensureMusic() {
 function clear(color) { ctx.fillStyle = color; ctx.fillRect(0,0,W,H); }
 function rect(x,y,w,h,c) { ctx.fillStyle = c; ctx.fillRect(x,y,w,h); }
 function stroke(x,y,w,h,c,lw=1) { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1); }
+// Fonts: Fredoka for UI (loaded from Google Fonts by the tablet browser),
+// with system fallback while it loads. Bangers is used only for the logo.
+const UI_FONT = '"Fredoka", -apple-system, "Segoe UI", Roboto, sans-serif';
+const LOGO_FONT = '"Bangers", "Fredoka", -apple-system, sans-serif';
 function text(str, x, y, size=12, color="#fff", align="left") {
-  ctx.fillStyle = color; ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.fillStyle = color; ctx.font = `600 ${size}px ${UI_FONT}`;
   ctx.textAlign = align; ctx.textBaseline = "top"; ctx.fillText(str, x, y);
 }
 
 // ==============================================================
-// UI kit (v0.7.0) — rounded rects, type badges, pill buttons.
+// UI kit (v0.8.0) — rounded rects, type badges, pill buttons.
 // ==============================================================
 function rrect(x, y, w, h, r, fill, stroke, sw) {
   const rr = Math.min(r, w/2, h/2);
@@ -626,7 +634,7 @@ const TYPE_COLORS = {
 };
 function drawTypeBadge(cx, cy, type, size=1) {
   const label = String(type || "").toUpperCase();
-  ctx.font = `800 ${9*size}px -apple-system, sans-serif`;
+  ctx.font = `800 ${9*size}px 'Fredoka', -apple-system, sans-serif`;
   const w = ctx.measureText(label).width + 14*size;
   const h = 16*size;
   const x = cx - w/2, y = cy - h/2;
@@ -638,7 +646,7 @@ function drawTypeBadge(cx, cy, type, size=1) {
   rrect(x+2, y+2, w-4, h/2-2, (h-4)/2, "#fff");
   ctx.restore();
   ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = `800 ${9*size}px -apple-system, sans-serif`;
+  ctx.font = `800 ${9*size}px 'Fredoka', -apple-system, sans-serif`;
   ctx.fillText(label, cx, cy + 0.5);
 }
 // Chunky pill button with drop shadow, optional focus highlight
@@ -659,65 +667,232 @@ function pillButton(x, y, w, h, label, opts) {
   rrect(x+4, y+3, w-8, h/2-3, (h-6)/2, "#fff");
   ctx.restore();
   ctx.fillStyle = fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = `800 ${opts.fontSize || 14}px -apple-system, sans-serif`;
+  ctx.font = `800 ${opts.fontSize || 14}px 'Fredoka', -apple-system, sans-serif`;
   ctx.fillText(label, x+w/2, y+h/2+1);
 }
 
 // ==============================================================
 // Tiles / houses
 // ==============================================================
+// ---- Town tile art (v0.8.0 rework) ----
+// Small deterministic PRNG so per-tile decorations (flowers, cracks) stay stable
+// across frames and don't shimmer.
+function hashRand(x, y, salt) {
+  let h = ((x * 73856093) ^ (y * 19349663) ^ (salt * 83492791)) >>> 0;
+  h = (h ^ (h >>> 13)) * 1274126177 >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h / 4294967295;
+}
 function drawHouse(px, py) {
-  rect(px, py, TILE*3, TILE*2, "#d9c39a");
-  rect(px+2, py+2, TILE*3-4, 3, "#8a6a3a");
-  rect(px+2, py+TILE-1, TILE*3-4, 2, "#8a6a3a");
-  rect(px+TILE+6, py+TILE*2-16, 12, 16, "#6b3f1f");
-  rect(px+4, py+TILE-4, 10, 10, "#87cefa");
-  rect(px+TILE*3-14, py+TILE-4, 10, 10, "#87cefa");
+  // Cast a soft shadow underneath the whole building
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(px + TILE*1.5, py + TILE*2.05, TILE*1.55, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  // Wall body — vertical wooden plank effect
+  const wallX = px, wallY = py, wallW = TILE*3, wallH = TILE*2;
+  const g = ctx.createLinearGradient(0, wallY, 0, wallY+wallH);
+  g.addColorStop(0, "#f2d9a2"); g.addColorStop(1, "#c9a56a");
+  ctx.fillStyle = g; ctx.fillRect(wallX, wallY, wallW, wallH);
+  // Plank seams
+  ctx.strokeStyle = "rgba(90,55,20,0.25)"; ctx.lineWidth = 1;
+  for (let i = 1; i < 6; i++) {
+    const gx = wallX + (wallW / 6) * i;
+    ctx.beginPath(); ctx.moveTo(gx, wallY+3); ctx.lineTo(gx, wallY+wallH-3); ctx.stroke();
+  }
+  // Bottom brick trim
+  ctx.fillStyle = "#8a5a34"; ctx.fillRect(wallX, wallY+wallH-4, wallW, 4);
+  ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    ctx.beginPath(); ctx.moveTo(wallX + (wallW/8)*i, wallY+wallH-4); ctx.lineTo(wallX + (wallW/8)*i, wallY+wallH); ctx.stroke();
+  }
+  // Door — arched
+  const dw = 16, dh = 22, dx = wallX + wallW/2 - dw/2, dy = wallY + wallH - dh - 4;
+  ctx.fillStyle = "#5b2f12";
+  ctx.beginPath();
+  ctx.moveTo(dx, dy+dh);
+  ctx.lineTo(dx, dy+6);
+  ctx.arc(dx+dw/2, dy+6, dw/2, Math.PI, 0);
+  ctx.lineTo(dx+dw, dy+dh);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#3a1a08"; ctx.lineWidth = 1.5; ctx.stroke();
+  // Door knob
+  ctx.fillStyle = "#ffcf3a";
+  ctx.beginPath(); ctx.arc(dx+dw-4, dy+dh-8, 1.5, 0, Math.PI*2); ctx.fill();
+  // Windows with cross-mullion + sill
+  const drawWin = (wx, wy) => {
+    // sill
+    ctx.fillStyle = "#8a5a34"; ctx.fillRect(wx-1, wy+10, 12, 3);
+    // frame
+    ctx.fillStyle = "#7a4a22"; ctx.fillRect(wx-1, wy-1, 12, 12);
+    // glass
+    const gg = ctx.createLinearGradient(0, wy, 0, wy+10);
+    gg.addColorStop(0, "#a8dcff"); gg.addColorStop(1, "#5aa3d6");
+    ctx.fillStyle = gg; ctx.fillRect(wx, wy, 10, 10);
+    // cross
+    ctx.strokeStyle = "#3a2010"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(wx+5, wy); ctx.lineTo(wx+5, wy+10); ctx.moveTo(wx, wy+5); ctx.lineTo(wx+10, wy+5); ctx.stroke();
+  };
+  drawWin(wallX + 6, wallY + TILE - 4);
+  drawWin(wallX + wallW - 16, wallY + TILE - 4);
 }
 function drawRoof(px, py, palette="red") {
-  const main = palette === "prof" ? "#5aa04a" : "#c0392b";
-  const trim = palette === "prof" ? "#3a6f30" : "#8b2a1c";
+  const main   = palette === "prof" ? "#4b8a3e" : "#c0392b";
+  const shade  = palette === "prof" ? "#2f6329" : "#8b2a1c";
+  const trim   = palette === "prof" ? "#2a4a22" : "#5a1a10";
+  // Base sloped roof
   ctx.fillStyle = main;
   ctx.beginPath();
-  ctx.moveTo(px-2, py+TILE); ctx.lineTo(px+TILE*1.5, py+2); ctx.lineTo(px+TILE*3+2, py+TILE);
+  ctx.moveTo(px-4, py+TILE+2);
+  ctx.lineTo(px+TILE*1.5, py-2);
+  ctx.lineTo(px+TILE*3+4, py+TILE+2);
   ctx.closePath(); ctx.fill();
-  ctx.fillStyle = trim; ctx.fillRect(px-2, py+TILE-3, TILE*3+4, 3);
+  // Right-side shading polygon (fake 3D)
+  ctx.fillStyle = shade;
+  ctx.beginPath();
+  ctx.moveTo(px+TILE*1.5, py-2);
+  ctx.lineTo(px+TILE*3+4, py+TILE+2);
+  ctx.lineTo(px+TILE*1.5, py+TILE-4);
+  ctx.closePath(); ctx.fill();
+  // Ridge highlight
+  ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(px-2, py+TILE); ctx.lineTo(px+TILE*1.5, py); ctx.stroke();
+  // Bottom trim / gutter
+  ctx.fillStyle = trim; ctx.fillRect(px-4, py+TILE-1, TILE*3+8, 4);
+  // Roof shingles (horizontal lines)
+  ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 1;
+  for (let y = 0; y < 3; y++) {
+    const yy = py + 6 + y * 6;
+    const spread = (yy - py) / (TILE) * (TILE*1.5);
+    ctx.beginPath(); ctx.moveTo(px + TILE*1.5 - spread, yy); ctx.lineTo(px + TILE*1.5 + spread, yy); ctx.stroke();
+  }
   if (palette === "prof") {
-    // Little chimney with steam puff to signal "lab"
-    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(px+TILE*2, py+4, 6, 10);
+    // Chimney with animated-ish steam (fixed puff shapes so no shimmer)
+    ctx.fillStyle = "#8a5a34"; ctx.fillRect(px + TILE*2 - 2, py+2, 8, 12);
+    ctx.fillStyle = "#5a3a1a"; ctx.fillRect(px + TILE*2 - 3, py+1, 10, 3);
     ctx.fillStyle = "#e8f0ff";
-    ctx.beginPath(); ctx.arc(px+TILE*2+3, py+2, 4, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(px+TILE*2+8, py-3, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px+TILE*2+2, py-2, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px+TILE*2+8, py-8, 3.5, 0, Math.PI*2); ctx.fill();
+    // Little "LAB" flag on top
+    ctx.fillStyle = "#8a72b8"; ctx.fillRect(px + TILE*1.5 - 1, py - 12, 2, 12);
+    ctx.fillStyle = "#ffcf3a";
+    ctx.beginPath();
+    ctx.moveTo(px + TILE*1.5 + 1, py - 12);
+    ctx.lineTo(px + TILE*1.5 + 12, py - 9);
+    ctx.lineTo(px + TILE*1.5 + 1, py - 6);
+    ctx.closePath(); ctx.fill();
   }
 }
 function drawTile(tx, ty) {
   const t = MAP[ty][tx];
   const x = tx*TILE, y = ty*TILE;
+  // Ground: base grass with checker + per-tile subtle noise + occasional flower/pebble
   if (t === "." || t === "P" || t === "T" || t === "H" || t === "R" || t === "L" || t === "D") {
-    rect(x,y,TILE,TILE, (tx+ty)%2===0 ? "#5cbf5a" : "#54b354");
-  }
-  if (t === "P") { rect(x,y,TILE,TILE, "#d7c184"); rect(x+8, y+10, 8, 4, "#c4ac6a"); }
-  if (t === "D") {
-    // Doormat + welcome sign for the professor's lab
-    rect(x,y,TILE,TILE, "#d7c184");
-    rect(x+3, y+8, TILE-6, TILE-12, "#8b3a2c");
-    rect(x+5, y+10, TILE-10, TILE-16, "#c04a3a");
-    // small "LAB" plaque
-    ctx.fillStyle = "#f0e8b0"; ctx.fillRect(x+6, y+2, TILE-12, 5);
-    ctx.fillStyle = "#3a2010"; ctx.font = "700 5px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText("LAB", x+TILE/2, y+2.5);
-  }
-  if (t === "T") {
-    rect(x,y,TILE,TILE, "#2f8a3f");
-    for (let i=0;i<4;i++){
-      const bx = x + 3 + (i%2)*10, by = y + 4 + Math.floor(i/2)*10;
-      rect(bx, by, 3, 8, "#1c5f2a"); rect(bx+4, by+2, 3, 6, "#1c5f2a");
+    const base = (tx+ty)%2===0 ? "#6ecf5f" : "#5eb84f";
+    ctx.fillStyle = base; ctx.fillRect(x, y, TILE, TILE);
+    // Blades of grass tufts (deterministic)
+    ctx.strokeStyle = "rgba(30,80,30,0.5)"; ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const bx = x + hashRand(tx, ty, i) * (TILE-4) + 2;
+      const by = y + hashRand(tx, ty, i+30) * (TILE-4) + 2;
+      ctx.beginPath(); ctx.moveTo(bx, by+3); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx+1, by+3); ctx.lineTo(bx+1, by+1); ctx.stroke();
+    }
+    // Occasional flower on plain-grass tiles
+    if (t === "." && hashRand(tx, ty, 7) < 0.18) {
+      const fx = x + 4 + hashRand(tx, ty, 8) * (TILE-8);
+      const fy = y + 4 + hashRand(tx, ty, 9) * (TILE-8);
+      const cols = ["#ffcf3a","#ff7fb8","#c9f0ff","#e8dfff"];
+      const col = cols[Math.floor(hashRand(tx, ty, 10) * cols.length)];
+      ctx.fillStyle = col;
+      // 4-petal little flower
+      ctx.beginPath(); ctx.arc(fx-2, fy, 1.6, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fx+2, fy, 1.6, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fx, fy-2, 1.6, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fx, fy+2, 1.6, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#ffcf3a";
+      ctx.beginPath(); ctx.arc(fx, fy, 1.2, 0, Math.PI*2); ctx.fill();
     }
   }
+  // Path tiles — sandy strip with cobbles
+  if (t === "P" || t === "D") {
+    const g = ctx.createLinearGradient(0, y, 0, y+TILE);
+    g.addColorStop(0, "#e5cf90"); g.addColorStop(1, "#c8a866");
+    ctx.fillStyle = g; ctx.fillRect(x, y, TILE, TILE);
+    // Pebble dots
+    ctx.fillStyle = "rgba(120,90,40,0.5)";
+    for (let i = 0; i < 4; i++) {
+      const px = x + hashRand(tx, ty, i+50) * TILE;
+      const py = y + hashRand(tx, ty, i+60) * TILE;
+      ctx.beginPath(); ctx.arc(px, py, 1.2, 0, Math.PI*2); ctx.fill();
+    }
+    // Path edges — darker line where path meets grass on north/south only
+    ctx.strokeStyle = "rgba(120,90,40,0.35)"; ctx.lineWidth = 1;
+    if (tileAt(tx, ty-1) !== "P" && tileAt(tx, ty-1) !== "D") { ctx.beginPath(); ctx.moveTo(x, y+0.5); ctx.lineTo(x+TILE, y+0.5); ctx.stroke(); }
+    if (tileAt(tx, ty+1) !== "P" && tileAt(tx, ty+1) !== "D") { ctx.beginPath(); ctx.moveTo(x, y+TILE-0.5); ctx.lineTo(x+TILE, y+TILE-0.5); ctx.stroke(); }
+  }
+  // Lab welcome mat
+  if (t === "D") {
+    const mx = x+2, my = y+6, mw = TILE-4, mh = TILE-10;
+    // shadow under mat
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(mx+1, my+mh, mw, 2);
+    // mat body with fringe
+    ctx.fillStyle = "#5aa04a";
+    rrect(mx, my, mw, mh, 3, "#5aa04a", "#2f6329", 1.5);
+    ctx.strokeStyle = "#2f6329"; ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const px2 = mx + 2 + i * 4;
+      ctx.beginPath(); ctx.moveTo(px2, my+mh); ctx.lineTo(px2, my+mh+2); ctx.stroke();
+    }
+    // "LAB" text on mat
+    ctx.fillStyle = "#f0e8b0"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `700 7px ${UI_FONT}`;
+    ctx.fillText("LAB", mx + mw/2, my + mh/2);
+  }
+  // Tall grass — bushier layered clumps with darker outline
+  if (t === "T") {
+    // dark backing
+    ctx.fillStyle = "#26762f"; ctx.fillRect(x, y, TILE, TILE);
+    // clumps of grass tufts
+    ctx.fillStyle = "#3ea547";
+    for (let i = 0; i < 5; i++) {
+      const bx = x + 3 + hashRand(tx, ty, i+100) * (TILE-6);
+      const by = y + 4 + hashRand(tx, ty, i+110) * (TILE-6);
+      ctx.beginPath();
+      ctx.moveTo(bx, by+4);
+      ctx.lineTo(bx-3, by+8);
+      ctx.lineTo(bx-1, by-1);
+      ctx.lineTo(bx+1, by-2);
+      ctx.lineTo(bx+3, by-1);
+      ctx.lineTo(bx+5, by+8);
+      ctx.closePath(); ctx.fill();
+    }
+    // Highlights
+    ctx.fillStyle = "#6ecf5f";
+    for (let i = 0; i < 3; i++) {
+      const bx = x + 5 + hashRand(tx, ty, i+130) * (TILE-10);
+      const by = y + 4 + hashRand(tx, ty, i+140) * (TILE-6);
+      ctx.beginPath(); ctx.arc(bx, by, 1.3, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  // Fence tile — grass under + wooden panel with two horizontal beams
   if (t === "F") {
-    rect(x,y,TILE,TILE, "#7fbf7d");
-    rect(x, y+8, TILE, 3, "#5a3a1a"); rect(x, y+16, TILE, 3, "#5a3a1a");
-    rect(x+4, y+2, 3, TILE-4, "#7a4e26"); rect(x+TILE-7, y+2, 3, TILE-4, "#7a4e26");
+    // grass base
+    ctx.fillStyle = (tx+ty)%2===0 ? "#6ecf5f" : "#5eb84f"; ctx.fillRect(x, y, TILE, TILE);
+    // posts
+    ctx.fillStyle = "#8a5a34"; ctx.fillRect(x+3, y+2, 4, TILE-4); ctx.fillRect(x+TILE-7, y+2, 4, TILE-4);
+    ctx.fillStyle = "#5a3a1a"; ctx.fillRect(x+3, y+2, 4, 2); ctx.fillRect(x+TILE-7, y+2, 4, 2);
+    // beams
+    ctx.fillStyle = "#a5764a";
+    ctx.fillRect(x, y+7, TILE, 4);
+    ctx.fillRect(x, y+15, TILE, 4);
+    // beam edges shading
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(x, y+10, TILE, 1);
+    ctx.fillRect(x, y+18, TILE, 1);
   }
 }
 function drawMap() {
@@ -732,6 +907,7 @@ function drawMap() {
       drawRoof(x*TILE, y*TILE, "prof");
   }
 }
+// Chibi trainer sprite (v0.8.0) — outlined pixel-art style
 function drawPlayer() {
   const p = game.player;
   let px, py;
@@ -740,20 +916,98 @@ function drawPlayer() {
     px = (p.from.x + (p.to.x - p.from.x) * t) * TILE;
     py = (p.from.y + (p.to.y - p.from.y) * t) * TILE;
   } else { px = p.x * TILE; py = p.y * TILE; }
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-2, 8, 3, 0, 0, Math.PI*2); ctx.fill();
-  const shirt = game.playerSprite === "boy" ? "#4a7fd6" : "#e05aa8";
-  const hair  = game.playerSprite === "boy" ? "#4a2a10" : "#c48a1a";
-  rect(px+7, py+10, 10, 9, shirt);
-  rect(px+7, py+18, 4, 5, "#2a3a6a"); rect(px+13, py+18, 4, 5, "#2a3a6a");
-  rect(px+8, py+3, 8, 8, "#f2c9a0");
-  rect(px+8, py+2, 8, 3, hair);
-  if (game.playerSprite === "girl") { rect(px+7, py+5, 1, 5, hair); rect(px+16, py+5, 1, 5, hair); }
-  const eyeY = py+6;
-  if (p.dir === "down")  { rect(px+10, eyeY, 1, 2, "#000"); rect(px+13, eyeY, 1, 2, "#000"); }
-  if (p.dir === "up")    { rect(px+9, py+2, 6, 1, hair); }
-  if (p.dir === "left")  { rect(px+10, eyeY, 1, 2, "#000"); }
-  if (p.dir === "right") { rect(px+13, eyeY, 1, 2, "#000"); }
+  drawTrainer(px + TILE/2, py + TILE, game.playerSprite, p.dir, p.moving ? game.frame : 0);
+}
+// Reusable so choose-screen shows the same sprite, just bigger.
+function drawTrainer(cx, groundY, kind, dir, animFrame) {
+  // Colours
+  const shirt   = kind === "boy" ? "#3a7ee0" : "#e04a92";
+  const shirtSh = kind === "boy" ? "#2a5aa0" : "#a83266";
+  const hatCol  = kind === "boy" ? "#e04a3a" : "#8a4ad0";
+  const hatSh   = kind === "boy" ? "#a02818" : "#5e2e94";
+  const hair    = kind === "boy" ? "#3a2010" : "#c48a1a";
+  const skin    = "#f5cfa6";
+  const skinSh  = "#c99b6f";
+  const pants   = "#2a3a6a";
+  const shoes   = "#1a1a1a";
+  const outline = "#0d0510";
+  // Foot bob when moving
+  const bob = animFrame ? (Math.floor(animFrame/6)%2) : 0;
+  const x = cx - 8, gy = groundY;
+  // Shadow
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath(); ctx.ellipse(cx, gy-1, 8, 3, 0, 0, Math.PI*2); ctx.fill();
+  // Legs (with bob)
+  ctx.fillStyle = outline;  ctx.fillRect(x+3, gy-8, 4, 6+ (bob?0:0));
+  ctx.fillRect(x+9, gy-8, 4, 6);
+  ctx.fillStyle = pants;    ctx.fillRect(x+4, gy-8, 2, 5);   ctx.fillRect(x+10, gy-8, 2, 5);
+  ctx.fillStyle = shoes;    ctx.fillRect(x+3, gy-3+bob, 4, 3); ctx.fillRect(x+9, gy-3-bob, 4, 3);
+  // Body (rounded outline)
+  ctx.fillStyle = outline;
+  ctx.fillRect(x+1, gy-16, 14, 9);
+  ctx.fillStyle = shirt;
+  ctx.fillRect(x+2, gy-15, 12, 7);
+  // Body shading
+  ctx.fillStyle = shirtSh;
+  ctx.fillRect(x+2, gy-9, 12, 2);
+  // Arms
+  ctx.fillStyle = outline;
+  ctx.fillRect(x,   gy-13, 2, 6);
+  ctx.fillRect(x+14, gy-13, 2, 6);
+  ctx.fillStyle = skin;
+  ctx.fillRect(x, gy-9, 2, 2);
+  ctx.fillRect(x+14, gy-9, 2, 2);
+  // Head — outlined
+  ctx.fillStyle = outline;
+  ctx.fillRect(x+2, gy-25, 12, 10);
+  ctx.fillStyle = skin;
+  ctx.fillRect(x+3, gy-24, 10, 8);
+  ctx.fillStyle = skinSh;
+  ctx.fillRect(x+3, gy-18, 10, 1);
+  // Hair (peeks under cap)
+  ctx.fillStyle = hair;
+  ctx.fillRect(x+3, gy-19, 10, 1);
+  if (kind === "girl") {
+    // Ponytail bunches on sides
+    ctx.fillStyle = outline; ctx.fillRect(x+1, gy-22, 2, 6); ctx.fillRect(x+13, gy-22, 2, 6);
+    ctx.fillStyle = hair;    ctx.fillRect(x+2, gy-21, 1, 4); ctx.fillRect(x+13, gy-21, 1, 4);
+  }
+  // Cap (baseball-cap silhouette)
+  ctx.fillStyle = outline;
+  ctx.fillRect(x+1, gy-27, 14, 4);
+  ctx.fillStyle = hatCol;
+  ctx.fillRect(x+2, gy-26, 12, 2);
+  ctx.fillStyle = hatSh;
+  ctx.fillRect(x+2, gy-24, 12, 1);
+  // Cap peak — direction-aware
+  ctx.fillStyle = outline;
+  if (dir === "left")       ctx.fillRect(x-2, gy-24, 4, 3);
+  else if (dir === "right") ctx.fillRect(x+14, gy-24, 4, 3);
+  else                      ctx.fillRect(x+3, gy-23, 10, 2);
+  ctx.fillStyle = hatCol;
+  if (dir === "left")       ctx.fillRect(x-1, gy-23, 3, 1);
+  else if (dir === "right") ctx.fillRect(x+14, gy-23, 3, 1);
+  else                      ctx.fillRect(x+4, gy-22, 8, 1);
+  // Face — eyes shift with direction (only visible when facing camera-side)
+  ctx.fillStyle = outline;
+  if (dir === "down") {
+    ctx.fillRect(x+5, gy-20, 1, 2);
+    ctx.fillRect(x+10, gy-20, 1, 2);
+    // little mouth
+    ctx.fillRect(x+7, gy-16, 2, 1);
+  } else if (dir === "up") {
+    // back of head, no face
+    ctx.fillStyle = hair; ctx.fillRect(x+3, gy-19, 10, 3);
+  } else if (dir === "left") {
+    ctx.fillRect(x+4, gy-20, 1, 2);
+    ctx.fillRect(x+3, gy-16, 2, 1);
+  } else if (dir === "right") {
+    ctx.fillRect(x+11, gy-20, 1, 2);
+    ctx.fillRect(x+11, gy-16, 2, 1);
+  }
+  // Backpack tab peeking over shoulder
+  ctx.fillStyle = outline; ctx.fillRect(x+5, gy-16, 6, 2);
+  ctx.fillStyle = "#ffcf3a"; ctx.fillRect(x+6, gy-16, 4, 1);
 }
 
 // ==============================================================
@@ -1218,56 +1472,136 @@ function updateProfessor() {
   if (pressed.b)     { Audio.SFX.back(); game.state = STATE.OVERWORLD; stepOffDoor(); }
 }
 function drawProfessorScreen() {
-  // Interior scene — warm lab colours
-  clear("#2a1a30");
-  // floorboards
-  for (let i=0;i<10;i++) rect(0, 380+i*26, W, 2, "#4a2a20");
-  // Wall + shelf
-  rect(0, 0, W, 380, "#5a3a5a");
-  rect(20, 60, W-40, 20, "#8b5a3a"); // shelf
-  // three "poke-balls" on the shelf
-  for (let i=0;i<3;i++){
-    const bx = 60 + i*100;
-    ctx.fillStyle = "#e05a5a"; ctx.beginPath(); ctx.arc(bx, 66, 10, Math.PI, 0); ctx.fill();
-    ctx.fillStyle = "#f0f0f0"; ctx.beginPath(); ctx.arc(bx, 66, 10, 0, Math.PI); ctx.fill();
-    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(bx-10, 65, 20, 2);
-    ctx.beginPath(); ctx.arc(bx, 66, 3, 0, Math.PI*2); ctx.fill();
+  // ---- Lab interior — warm wood + wallpaper, no pokéballs ----
+  // Wallpaper (soft striped teal)
+  const wallG = ctx.createLinearGradient(0,0,0,320);
+  wallG.addColorStop(0, "#4a3a68"); wallG.addColorStop(1, "#382a52");
+  ctx.fillStyle = wallG; ctx.fillRect(0, 0, W, 320);
+  ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1;
+  for (let i = 0; i < 30; i++) { ctx.beginPath(); ctx.moveTo(i*14, 0); ctx.lineTo(i*14, 320); ctx.stroke(); }
+  // Baseboard
+  ctx.fillStyle = "#3a2010"; ctx.fillRect(0, 316, W, 6);
+  // Floorboards
+  const floorG = ctx.createLinearGradient(0, 322, 0, H);
+  floorG.addColorStop(0, "#8b5a34"); floorG.addColorStop(1, "#5a3520");
+  ctx.fillStyle = floorG; ctx.fillRect(0, 322, W, H - 322);
+  ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 1;
+  for (let i = 1; i < 8; i++) { const y = 322 + i * 26; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  // ---- Décor: bookshelf on the left, workbench with beakers on the right, framed picture centre ----
+  // Bookshelf
+  const bsx = 10, bsy = 24, bsw = 76, bsh = 130;
+  rrect(bsx, bsy, bsw, bsh, 4, "#6b4a2a", "#3a2010", 2);
+  // shelves
+  ctx.fillStyle = "#3a2010";
+  for (let s = 0; s < 4; s++) ctx.fillRect(bsx+4, bsy+8 + s*32, bsw-8, 3);
+  // books
+  const bookCols = ["#e05a5a","#3a9be0","#4bd07a","#ffcf3a","#8a72b8","#e04a92"];
+  for (let s = 0; s < 3; s++) {
+    let bx = bsx + 6;
+    while (bx < bsx + bsw - 10) {
+      const bw = 5 + Math.floor(hashRand(bx, s, 1) * 6);
+      const bh = 22 + Math.floor(hashRand(bx, s, 2) * 6);
+      const c = bookCols[Math.floor(hashRand(bx, s, 3) * bookCols.length)];
+      ctx.fillStyle = c; ctx.fillRect(bx, bsy + 11 + s*32 + (30 - bh), bw, bh);
+      ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1;
+      ctx.strokeRect(bx, bsy + 11 + s*32 + (30 - bh), bw, bh);
+      bx += bw + 1;
+    }
   }
-  // Professor sprite (frog scientist)
-  drawProfessor(W/2, 170);
+  // Framed CroakyMon poster centre
+  const px = W/2 - 44, py = 30, pw = 88, ph = 74;
+  rrect(px, py, pw, ph, 6, "#3a2010", "#1a0a05", 3);
+  rrect(px+4, py+4, pw-8, ph-8, 4, "#3a4390");
+  ctx.fillStyle = "#ffcf3a"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.font = `700 12px ${UI_FONT}`; ctx.fillText("CROAKY", W/2, py+22);
+  ctx.font = `700 12px ${UI_FONT}`; ctx.fillText("SCIENCE", W/2, py+38);
+  // tiny mon silhouette on poster
+  ctx.fillStyle = "#0e1230";
+  ctx.beginPath(); ctx.arc(W/2, py+58, 10, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#ffcf3a"; ctx.beginPath(); ctx.arc(W/2-3, py+55, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W/2+3, py+55, 1.5, 0, Math.PI*2); ctx.fill();
+  // Workbench with beakers on the right
+  const wbx = W - 90, wby = 90, wbw = 82, wbh = 64;
+  rrect(wbx, wby, wbw, wbh, 4, "#7a4a22", "#3a2010", 2);
+  rrect(wbx+2, wby+2, wbw-4, 6, 3, "#a5764a");
+  // Beakers
+  const beakerCols = ["#4bd07a", "#3a9be0", "#e04a92"];
+  for (let b = 0; b < 3; b++) {
+    const bx2 = wbx + 12 + b * 22, by2 = wby + 14;
+    // flask body
+    ctx.fillStyle = "#e8f0ff";
+    ctx.beginPath();
+    ctx.moveTo(bx2, by2);
+    ctx.lineTo(bx2+8, by2);
+    ctx.lineTo(bx2+10, by2+18);
+    ctx.lineTo(bx2-2, by2+18);
+    ctx.closePath(); ctx.fill();
+    // liquid
+    ctx.fillStyle = beakerCols[b];
+    ctx.beginPath();
+    ctx.moveTo(bx2, by2+8);
+    ctx.lineTo(bx2+8, by2+8);
+    ctx.lineTo(bx2+10, by2+18);
+    ctx.lineTo(bx2-2, by2+18);
+    ctx.closePath(); ctx.fill();
+    // rim
+    ctx.strokeStyle = "#1a0a05"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx2-1, by2); ctx.lineTo(bx2+9, by2);
+    ctx.moveTo(bx2, by2); ctx.lineTo(bx2-2, by2+18); ctx.lineTo(bx2+10, by2+18); ctx.lineTo(bx2+8, by2);
+    ctx.stroke();
+  }
+  // Potted plant next to workbench
+  const plx = W - 96, ply = 130;
+  ctx.fillStyle = "#8b3a2c"; ctx.beginPath();
+  ctx.moveTo(plx, ply); ctx.lineTo(plx+12, ply); ctx.lineTo(plx+10, ply+12); ctx.lineTo(plx+2, ply+12); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#4bd07a";
+  ctx.beginPath(); ctx.arc(plx+6, ply-4, 8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(plx+1, ply-2, 5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(plx+11, ply-2, 5, 0, Math.PI*2); ctx.fill();
 
-  text("Professor Ribbit", W/2, 240, 14, "#ffcf3a", "center");
-  text("Choose your starter CroakyMon", W/2, 258, 11, "#c9f0ff", "center");
+  // ---- Professor ----
+  drawProfessor(W/2, 200);
+  // Name plate
+  const nx = W/2, ny = 258;
+  const nameLabel = "Professor Ribbit";
+  ctx.font = `700 14px ${UI_FONT}`;
+  const nw = ctx.measureText(nameLabel).width + 24;
+  rrect(nx - nw/2, ny - 12, nw, 22, 11, "#ffcf3a", "#1a0a2a", 2);
+  ctx.fillStyle = "#1a0a2a"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(nameLabel, nx, ny);
+  ctx.font = `600 11px ${UI_FONT}`;
+  text("Choose your starter CroakyMon", W/2, 276, 12, "#c9f0ff", "center");
 
-  // Three starter cards
-  const cardW = 100, cardH = 140, gap = 8;
+  // ---- Three starter cards, chunky pill style ----
+  const cardW = 100, cardH = 138, gap = 8;
   const totalW = cardW*3 + gap*2;
   const startX = (W - totalW) / 2;
-  const cardY = 290;
+  const cardY = 304;
   STARTERS.forEach((sp, i) => {
     const cx = startX + i*(cardW + gap);
     const selected = i === game.starterCursor;
-    rect(cx, cardY, cardW, cardH, selected ? "#3a4a80" : "#1a2050");
-    stroke(cx, cardY, cardW, cardH, selected ? "#ffcf3a" : "#4be0d0", selected ? 3 : 1);
-    drawMon({species:sp}, cx + cardW/2, cardY + 55, 0.9, 1);
-    text(displayName(sp), cx + cardW/2, cardY + 96, 12, "#fff", "center");
-    const typeColors = { fire:"#e85a2a", grass:"#4bd07a", water:"#3a9be0" };
-    const t = SPECIES[sp].type;
-    rect(cx + cardW/2 - 24, cardY + 114, 48, 14, typeColors[t] || "#888");
-    text(t.toUpperCase(), cx + cardW/2, cardY + 116, 10, "#fff", "center");
+    const bob = selected ? Math.sin(performance.now()/250) * 3 : 0;
+    panel(cx, cardY + bob, cardW, cardH,
+          selected ? "#3a4390" : "#1a2050",
+          selected ? "#ffcf3a" : "#4be0d0",
+          14);
+    drawMon({species:sp}, cx + cardW/2, cardY + bob + 58, 0.95, 0, "portrait");
+    text(displayName(sp), cx + cardW/2, cardY + bob + 96, 12, "#fff", "center");
+    const type = SPECIES[sp].type;
+    drawTypeBadge(cx + cardW/2, cardY + bob + 122, type, 0.95);
   });
 
-  // Instructions
-  rect(10, H - 90, W - 20, 80, "rgba(0,0,0,0.75)");
-  stroke(10, H - 90, W - 20, 80, "#fff", 2);
-  text("Left / Right: pick     A: choose     B: leave", W/2, H - 78, 11, "#fff", "center");
+  // ---- Bottom hint panel with blurb ----
+  panel(10, H - 96, W - 20, 84, "rgba(0,0,0,0.75)", "#ffcf3a", 12);
   const sp = STARTERS[game.starterCursor];
   const blurb = {
     CrimsonFungus: "A blazing mushroom sprite. Burns grass with HotDiggityDoggyDog.",
-    Vinehop:   "A calm sprout turtle. Slams foes with Tree Stomp.",
-    Tidefrog:  "A splashy ink squid. Douses fire with Shark Wave.",
-  }[sp];
-  wrapText(blurb, 20, H - 58, W - 40, 14, 12, "#c9f0ff");
+    Vinehop:       "A calm sprout turtle. Slams foes with Tree Stomp.",
+    Tidefrog:      "A splashy ink squid. Douses fire with Shark Wave.",
+  }[sp] || "A brand new CroakyMon.";
+  wrapText(blurb, 22, H - 86, W - 44, 15, 12, "#c9f0ff");
+  text("← → pick    A: choose    B: leave", W/2, H - 26, 11, "#ffcf3a", "center");
 }
 function drawProfessor(cx, cy) {
   // A bigger frog-ish scientist in a lab coat
@@ -1459,11 +1793,11 @@ function drawMsg() {
   const bob = Math.sin(t) * 1.5;
   rrect(W-52, y+120-24 + bob, 42, 20, 10, "#ffcf3a", "#1a0a2a", 2);
   ctx.fillStyle = "#1a0a2a"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = "800 11px -apple-system, sans-serif";
+  ctx.font = "800 11px 'Fredoka', -apple-system, sans-serif";
   ctx.fillText("A ›", W-31, y+120-14 + bob);
 }
 function wrapText(str, x, y, maxW, lh, size, color) {
-  ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.font = `700 ${size}px 'Fredoka', -apple-system, sans-serif`;
   ctx.fillStyle = color; ctx.textAlign = "left"; ctx.textBaseline = "top";
   const words = str.split(" "); let line = "", yy = y;
   for (const w of words) {
@@ -1480,14 +1814,14 @@ function wrapText(str, x, y, maxW, lh, size, color) {
 // Bouncy chunky logo — outlined letters with sunset gradient, per-letter tilt & bob.
 function drawLogo(cx, cy, tSec) {
   const word = "CroakyMon";
-  const size = 48;
+  const size = 54;
   ctx.save();
-  ctx.font = `900 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.font = `400 ${size}px ${LOGO_FONT}`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   const widths = [];
   let total = 0;
   for (const ch of word) { const w = ctx.measureText(ch).width; widths.push(w); total += w; }
-  total += (word.length - 1) * 2; // small tracking
+  total += (word.length - 1) * 3; // small tracking
   let x = cx - total/2;
   for (let i = 0; i < word.length; i++) {
     const ch = word[i];
@@ -1521,14 +1855,14 @@ function drawLogo(cx, cy, tSec) {
     ctx.fillText(ch, 0, 0);
     ctx.restore();
     ctx.restore();
-    x += widths[i] + 2;
+    x += widths[i] + 3;
   }
   ctx.restore();
 }
 // Bouncy subtitle pill
 function drawSubtitle(cx, cy, tSec) {
   const label = "GOTTA CATCH THEM ALL!";
-  ctx.font = "800 14px -apple-system, sans-serif";
+  ctx.font = "800 14px 'Fredoka', -apple-system, sans-serif";
   const w = ctx.measureText(label).width + 26, h = 26;
   const bob = Math.sin(tSec*2.5) * 1.5;
   rrect(cx - w/2, cy - h/2 + bob, w, h, h/2, "#4be0d0", "#1a0a2a", 3);
@@ -1537,7 +1871,7 @@ function drawSubtitle(cx, cy, tSec) {
   rrect(cx - w/2 + 4, cy - h/2 + bob + 3, w - 8, h/2 - 3, (h-6)/2, "#fff");
   ctx.restore();
   ctx.fillStyle = "#0b1f1c"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = "800 14px -apple-system, sans-serif";
+  ctx.font = "800 14px 'Fredoka', -apple-system, sans-serif";
   ctx.fillText(label, cx, cy + bob + 1);
 }
 
@@ -1559,7 +1893,7 @@ function drawTitle() {
   drawSubtitle(W/2, 138, t);
   // Version chip
   ctx.save();
-  ctx.font = "800 10px -apple-system, sans-serif";
+  ctx.font = "800 10px 'Fredoka', -apple-system, sans-serif";
   const vLabel = "v" + VERSION;
   const vw = ctx.measureText(vLabel).width + 12;
   rrect(W/2 - vw/2, 158, vw, 16, 8, "rgba(255,255,255,0.15)");
@@ -1575,14 +1909,31 @@ function drawTitle() {
   if (pressed.a) { Audio.SFX.select(); game.state = STATE.CHOOSE; }
 }
 function drawChoose() {
-  clear("#141a3a");
-  text("Choose Your Trainer", W/2, 60, 22, "#ffcf3a", "center");
-  text("Left / Right to pick, A to start", W/2, 90, 12, "#a6adcf", "center");
-  const boyX = 100, girlX = 260, y = 250;
-  drawTrainerBig(boyX, y, "boy"); drawTrainerBig(girlX, y, "girl");
-  text("Boy", boyX, 380, 16, "#fff", "center"); text("Girl", girlX, 380, 16, "#fff", "center");
-  const sel = game.playerSprite === "boy" ? boyX : girlX;
-  stroke(sel-50, y-90, 100, 200, "#ffcf3a", 3);
+  // Warm gradient background
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, "#2a1e58"); g.addColorStop(1, "#0e1230");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  text("CHOOSE YOUR TRAINER", W/2, 60, 22, "#ffcf3a", "center");
+  text("Left / Right to pick   A to start", W/2, 92, 12, "#c9c9ff", "center");
+  const boyX = 110, girlX = 250, y = 260;
+  // Podium panels
+  ["boy","girl"].forEach((kind, i) => {
+    const px = i === 0 ? boyX : girlX;
+    const focused = game.playerSprite === kind;
+    panel(px - 60, y - 130, 120, 220, focused ? "#3a4390" : "#1a2050", focused ? "#ffcf3a" : "#4be0d0", 16);
+    // Trainer sprite drawn 4x scale by drawing to an offscreen canvas.
+    drawTrainerBigScaled(px, y + 60, kind);
+    // Label pill
+    const label = kind === "boy" ? "BOY" : "GIRL";
+    ctx.font = `800 14px ${UI_FONT}`;
+    const lw = ctx.measureText(label).width + 22;
+    rrect(px - lw/2, y + 70, lw, 22, 11, focused ? "#ffcf3a" : "rgba(255,255,255,0.15)");
+    ctx.fillStyle = focused ? "#1a0a2a" : "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, px, y + 82);
+  });
+  // Confirm button
+  const bw = 260, bh = 46, bx = W/2 - bw/2, by = 520;
+  pillButton(bx, by, bw, bh, "START ADVENTURE ›", { focused:true, fontSize:16 });
   if (pressed.left)  { Audio.SFX.menu(); game.playerSprite = "boy"; }
   if (pressed.right) { Audio.SFX.menu(); game.playerSprite = "girl"; }
   if (pressed.a) {
@@ -1596,28 +1947,84 @@ function drawChoose() {
     ], null);
   }
 }
-function drawTrainerBig(cx, cy, kind) {
-  const shirt = kind === "boy" ? "#4a7fd6" : "#e05aa8";
-  const hair  = kind === "boy" ? "#4a2a10" : "#c48a1a";
-  ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(cx, cy+90, 40, 8, 0, 0, Math.PI*2); ctx.fill();
-  rect(cx-20, cy+40, 16, 45, "#2a3a6a"); rect(cx+4, cy+40, 16, 45, "#2a3a6a");
-  rect(cx-24, cy-20, 48, 65, shirt);
-  rect(cx-18, cy-70, 36, 40, "#f2c9a0");
-  rect(cx-18, cy-72, 36, 14, hair);
-  if (kind === "girl") { rect(cx-22, cy-58, 4, 25, hair); rect(cx+18, cy-58, 4, 25, hair); }
-  rect(cx-9, cy-52, 4, 5, "#111"); rect(cx+5, cy-52, 4, 5, "#111");
+// Draws the chibi trainer at integer scale 4 (crisp pixel-art look)
+function drawTrainerBigScaled(cx, groundY, kind) {
+  drawTrainerScaledInPlace(cx, groundY, kind, 4);
+}
+// Directly draws chunky big trainer at (cx, groundY) — mirrors drawTrainer proportions but at any scale.
+function drawTrainerScaledInPlace(cx, groundY, kind, S) {
+  const shirt   = kind === "boy" ? "#3a7ee0" : "#e04a92";
+  const shirtSh = kind === "boy" ? "#2a5aa0" : "#a83266";
+  const hatCol  = kind === "boy" ? "#e04a3a" : "#8a4ad0";
+  const hatSh   = kind === "boy" ? "#a02818" : "#5e2e94";
+  const hair    = kind === "boy" ? "#3a2010" : "#c48a1a";
+  const skin    = "#f5cfa6";
+  const pants   = "#2a3a6a";
+  const shoes   = "#1a1a1a";
+  const outline = "#0d0510";
+  const px = (n) => n * S;
+  const x = cx - 8*S, gy = groundY;
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath(); ctx.ellipse(cx, gy+2, 24, 6, 0, 0, Math.PI*2); ctx.fill();
+  // legs
+  ctx.fillStyle = outline; ctx.fillRect(x+px(3), gy-px(8), px(4), px(8));
+  ctx.fillRect(x+px(9), gy-px(8), px(4), px(8));
+  ctx.fillStyle = pants;   ctx.fillRect(x+px(4), gy-px(8), px(2), px(6));
+  ctx.fillRect(x+px(10), gy-px(8), px(2), px(6));
+  ctx.fillStyle = shoes;   ctx.fillRect(x+px(3), gy-px(2), px(4), px(2));
+  ctx.fillRect(x+px(9), gy-px(2), px(4), px(2));
+  // body
+  ctx.fillStyle = outline; ctx.fillRect(x+px(1), gy-px(17), px(14), px(9));
+  ctx.fillStyle = shirt;   ctx.fillRect(x+px(2), gy-px(16), px(12), px(7));
+  ctx.fillStyle = shirtSh; ctx.fillRect(x+px(2), gy-px(10), px(12), px(2));
+  // arms
+  ctx.fillStyle = outline; ctx.fillRect(x, gy-px(14), px(2), px(7));
+  ctx.fillRect(x+px(14), gy-px(14), px(2), px(7));
+  ctx.fillStyle = skin;    ctx.fillRect(x, gy-px(9), px(2), px(2));
+  ctx.fillRect(x+px(14), gy-px(9), px(2), px(2));
+  // head
+  ctx.fillStyle = outline; ctx.fillRect(x+px(2), gy-px(28), px(12), px(11));
+  ctx.fillStyle = skin;    ctx.fillRect(x+px(3), gy-px(27), px(10), px(9));
+  ctx.fillStyle = hair;    ctx.fillRect(x+px(3), gy-px(21), px(10), px(1));
+  if (kind === "girl") {
+    ctx.fillStyle = outline; ctx.fillRect(x+px(1), gy-px(24), px(2), px(7));
+    ctx.fillRect(x+px(13), gy-px(24), px(2), px(7));
+    ctx.fillStyle = hair;    ctx.fillRect(x+px(2), gy-px(23), px(1), px(5));
+    ctx.fillRect(x+px(13), gy-px(23), px(1), px(5));
+  }
+  // cap
+  ctx.fillStyle = outline; ctx.fillRect(x+px(1), gy-px(30), px(14), px(4));
+  ctx.fillStyle = hatCol;  ctx.fillRect(x+px(2), gy-px(29), px(12), px(2));
+  ctx.fillStyle = hatSh;   ctx.fillRect(x+px(2), gy-px(27), px(12), px(1));
+  ctx.fillStyle = outline; ctx.fillRect(x+px(3), gy-px(26), px(10), px(2));
+  ctx.fillStyle = hatCol;  ctx.fillRect(x+px(4), gy-px(25), px(8), px(1));
+  // Face — front facing
+  ctx.fillStyle = outline;
+  ctx.fillRect(x+px(5), gy-px(23), px(1), px(2));
+  ctx.fillRect(x+px(10), gy-px(23), px(1), px(2));
+  ctx.fillRect(x+px(7), gy-px(19), px(2), px(1));
+  // Backpack tab
+  ctx.fillStyle = outline; ctx.fillRect(x+px(5), gy-px(18), px(6), px(2));
+  ctx.fillStyle = "#ffcf3a"; ctx.fillRect(x+px(6), gy-px(18), px(4), px(1));
 }
 function drawOverworld() {
   drawMap(); drawPlayer();
-  rect(0, 0, W, 22, "rgba(0,0,0,0.55)");
-  text(`Fundude Town`, 8, 5, 12, "#ffcf3a");
-  text(`Caught: ${game.caught.size}/${ALL_SPECIES.length}`, W-8, 5, 12, "#4be0d0", "right");
+  // Top HUD — chunky pill with title + catch counter
+  rrect(6, 6, W-12, 26, 13, "rgba(14,18,48,0.85)", "#4be0d0", 2);
+  text("Fundude Town", 16, 12, 12, "#ffcf3a");
+  const counter = `${game.caught.size}/${ALL_SPECIES.length}`;
+  ctx.font = `800 11px ${UI_FONT}`;
+  const cw = ctx.measureText(counter).width + 18;
+  rrect(W - cw - 12, 10, cw, 18, 9, "#4be0d0");
+  text(counter, W - 12 - cw/2, 13, 11, "#0b1f1c", "center");
   if (!game.hasStarter) {
-    // Blinking hint pointing to the professor's lab
-    if (Math.floor(game.frame/30) % 2 === 0) {
-      rect(0, 22, W, 18, "rgba(255,207,58,0.85)");
-      text("Go to Professor Ribbit's lab (green roof) first!", W/2, 24, 11, "#1a1a1a", "center");
-    }
+    // Non-blinking, always-visible hint pill just below HUD
+    const label = "Visit Professor Ribbit's lab (green roof)";
+    ctx.font = `700 11px ${UI_FONT}`;
+    const lw = Math.min(W - 24, ctx.measureText(label).width + 26);
+    const bob = Math.sin(performance.now()/300) * 2;
+    rrect(W/2 - lw/2, 38 + bob, lw, 22, 11, "#ffcf3a", "#1a0a2a", 2);
+    text(label, W/2, 41 + bob, 11, "#1a0a2a", "center");
   }
 }
 function drawBattle() {
@@ -1701,7 +2108,7 @@ function drawHPBox(x, y, name, hp, maxHP) {
   text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
 }
 // ==============================================================
-// CroakyDex (v0.7.0) — a proper grid + detail view
+// CroakyDex (v0.8.0) — a proper grid + detail view
 // ==============================================================
 function updateDex() {
   if (game.dexView !== "detail") {
@@ -1733,7 +2140,7 @@ function drawDexGrid() {
   // Header
   text("CROAKYDEX", W/2, 18, 22, "#ffcf3a", "center");
   const caughtLabel = `Caught: ${game.caught.size} / ${ALL_SPECIES.length}`;
-  ctx.font = "800 12px -apple-system, sans-serif";
+  ctx.font = "800 12px 'Fredoka', -apple-system, sans-serif";
   const cw = ctx.measureText(caughtLabel).width + 20;
   rrect(W/2 - cw/2, 46, cw, 20, 10, "#4be0d0");
   text(caughtLabel, W/2, 51, 12, "#0b1f1c", "center");
@@ -1818,7 +2225,7 @@ function drawDexDetail() {
       const col = TYPE_COLORS[m.type] || "#3a4390";
       rrect(bx, by, bw, bh, bh/2, col, "rgba(0,0,0,0.35)", 1.5);
       ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "800 11px -apple-system, sans-serif";
+      ctx.font = "800 11px 'Fredoka', -apple-system, sans-serif";
       const label = m.name.length > 14 ? m.name.slice(0,13) + "…" : m.name;
       ctx.fillText(label, bx + bw/2, by + bh/2 + 1);
     });

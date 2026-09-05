@@ -1,6 +1,6 @@
 # Handover — CroakyMon Gotta Catch Them All!
 
-**Version:** 0.7.0
+**Version:** 0.8.0
 **Owner:** Gareth
 **Designer:** Gareth's child
 **Last updated:** 2026-09-05
@@ -45,6 +45,22 @@ Then open http://localhost:8000/croakymon.html. On GitHub Pages, no extra setup 
 | 8 | Win | Catch them all |
 | 9 | Art | Low-poly and colourful |
 | 10 | Name | CroakyMon Gotta Catch Them All! |
+
+## New in v0.8.0
+**Visual overhaul — proper fonts, redrawn town, chibi player, revamped lab.**
+- **Google Fonts**: added `Fredoka` (UI) and `Bangers` (logo) via link in the HTML head. Tablet browser fetches them; my sandbox can't but the tablet can, so this "just works" at runtime with system-font fallback while the font loads.
+- **Logo** switched to Bangers (bigger, chunkier). Same gradient/outline/bounce, now with real display type.
+- **Town tiles** completely redrawn:
+  - Grass: base gradient + per-tile deterministic blades of grass + occasional coloured flowers (per-tile PRNG so no shimmer).
+  - Path: sandy gradient with pebble specks + darker edge lines where the path meets grass on top/bottom.
+  - Tall grass: dark backing + layered clumps with highlight dots.
+  - Fence: proper posts + two horizontal wooden beams with shading.
+- **Houses** redone with gradient walls, vertical plank seams, brick trim, arched door with knob, sill+cross-mullion windows with sky gradient. Roofs get side shading (fake 3D), ridge highlight, shingle lines. Prof's lab gains a chimney with steam and a tiny mauve "LAB" flag.
+- **"LAB" mat** now a proper doormat: green tile with fringe tassels, sill shadow, LAB in gold.
+- **Player character**: full chibi trainer with black outline, coloured cap (baseball-cap silhouette that reorients with facing), backpack tab peek, foot-bob when moving. Same sprite used bigger on the trainer-select screen (4× integer scale for a crisp pixel look).
+- **Trainer-select screen** rebuilt as podium cards with focus glow and a chunky "START ADVENTURE ›" pill.
+- **Professor's lab**: **all pokéballs gone** — replaced with a bookshelf of coloured spines, a workbench with three coloured beakers, a potted plant, and a "CROAKY SCIENCE" framed poster with a silhouette. Wallpaper stripe pattern + polished floorboards. Professor gets a gold name-plate; starter cards are now pill panels that bob when focused, with proper type badges instead of coloured rectangles.
+- **Overworld HUD** redone with a rounded pill + a teal counter chip; the "visit the lab" hint is now a soft bobbing pill (was blinking harshly before).
 
 ## New in v0.7.0
 **Big visual pass — logo, CroakyDex, kid-friendly UI, brighter 3D.**
@@ -174,6 +190,7 @@ All also know Tackle (normal) as a backup.
 - **v1.0** — Full 8–12 species roster the child helps name; boss fight with Team Evil Soup's Chef.
 
 ## Changelog
+- **0.8.0** (2026-09-05) — Big visual overhaul: Google Fonts (Fredoka + Bangers), redrawn town tiles (grass/path/fence/tall-grass), gradient houses with proper doors + mullioned windows, cast-shadowed roofs, chibi trainer sprite with cap + backpack, redone trainer-select screen, revamped professor's lab (bookshelf, beakers, plant, framed poster — no more pokéballs), rounded HUD pill + softer hint banner. Fixed sed-generated font-string bug in the same pass.
 - **0.7.0** (2026-09-05) — Visual pass: chunky animated logo; face-forward + brighter 3D on title; shared UI kit (rrect, panel, drawTypeBadge, pillButton); redesigned battle menu with type-coloured move buttons and segmented HP bars; drop-shadowed message overlay; proper CroakyDex with grid + detail views. Fixed VERSION const drift.
 - **0.6.0** (2026-09-05) — Data-driven roster: `assets/mons/` folder holding both `.glb` models and a `mons.json` manifest. Game loads the manifest at boot and merges into `SPECIES`; STARTERS derived from `starter:true` entries. New `sync-mons-manifest.yml` Action auto-adds default entries for new `.glb` files. Generic `drawBlob` polygon fallback. Optimiser Action re-scoped to `assets/mons/`. New `assets/mons/README.md`.
 - **0.5.0** (2026-09-05) — Added CryptyCrab (normal/ghost, wild-only) with `Spooky Pinch`; added Ghost elemental type; dual-type defence + dual-type STAB in `damage()`; polygon fallback; title + win + collection screens updated for five species; asset slot for `crypty-crab.glb`. All previous validation still passes, plus new dual-type asserts.
