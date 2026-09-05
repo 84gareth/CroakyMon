@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>CroakyMon Gotta Catch Them All! v0.1.0</title>
+<style>
+  :root { --safe-b: env(safe-area-inset-bottom, 0px); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a0d1e; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #frame { position: relative; background: #000; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-radius: 10px; overflow: hidden; }
+  canvas { display: block; image-rendering: pixelated; }
+  #hud { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 10px calc(8px + var(--safe-b)); display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; }
+  .pad { pointer-events: auto; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 4px; }
+  .pad button { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25); color: #fff; border-radius: 10px; font-size: 18px; font-weight: 700; }
+  .pad button:active { background: rgba(255,255,255,0.32); }
+  .pad .sp { visibility: hidden; }
+  .actions { pointer-events: auto; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .actions button { min-width: 56px; height: 44px; padding: 0 12px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,207,58,0.9); color: #1a1a1a; font-weight: 800; font-size: 14px; }
+  .actions button.sec { background: rgba(75,224,208,0.9); color: #0b1f1c; }
+  .actions button:active { transform: translateY(1px); }
+  #note { position: absolute; top: 6px; left: 8px; font-size: 11px; color: rgba(255,255,255,0.6); pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="frame">
+  <canvas id="c" width="360" height="640"></canvas>
+  <div id="note">v0.1.0</div>
+  <div id="hud">
+    <div class="pad" id="pad">
+      <span class="sp"></span><button data-k="up">▲</button><span class="sp"></span>
+      <button data-k="left">◀</button><span class="sp"></span><button data-k="right">▶</button>
+      <span class="sp"></span><button data-k="down">▼</button><span class="sp"></span>
+    </div>
+    <div class="actions">
+      <button id="btnA" data-k="a">A</button>
+      <button id="btnB" class="sec" data-k="b">B</button>
+    </div>
+  </div>
+</div></div>
+<script>
+"use strict";
+// CroakyMon Gotta Catch Them All! — v0.1.0
+// Single-file HTML5 canvas game. Portrait, no scrolling, keyboard + on-screen dpad.
+
+const VERSION = "0.1.0";
+const W = 360, H = 640;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+// Fit canvas to viewport preserving aspect
+function fit() {
+  const pad = 20;
+  const vw = window.innerWidth - pad, vh = window.innerHeight - pad;
+  const scale = Math.min(vw / W, vh / H);
+  const frame = document.getElementById("frame");
+  frame.style.width = Math.floor(W * scale) + "px";
+  frame.style.height = Math.floor(H * scale) + "px";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+}
+window.addEventListener("resize", fit);
+fit();
+
+// ---- Input ----
+const keys = { up:false, down:false, left:false, right:false, a:false, b:false };
+const pressed = { up:false, down:false, left:false, right:false, a:false, b:false };
+function setKey(k, v) {
+  if (!(k in keys)) return;
+  if (v && !keys[k]) pressed[k] = true;
+  keys[k] = v;
+}
+const KEYMAP = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right",
+                 w:"up", s:"down", a:"left", d:"right", W:"up", S:"down", A:"left", D:"right",
+                 " ":"a", Enter:"a", z:"a", Z:"a", x:"b", X:"b", Escape:"b" };
+window.addEventListener("keydown", e => { const k = KEYMAP[e.key]; if (k) { setKey(k, true); e.preventDefault(); } });
+window.addEventListener("keyup",   e => { const k = KEYMAP[e.key]; if (k) { setKey(k, false); e.preventDefault(); } });
+document.querySelectorAll("[data-k]").forEach(btn => {
+  const k = btn.dataset.k;
+  const on = e => { e.preventDefault(); setKey(k, true); };
+  const off = e => { e.preventDefault(); setKey(k, false); };
+  btn.addEventListener("touchstart", on, {passive:false});
+  btn.addEventListener("touchend", off);
+  btn.addEventListener("touchcancel", off);
+  btn.addEventListener("mousedown", on);
+  btn.addEventListener("mouseup", off);
+  btn.addEventListener("mouseleave", off);
+});
+
+// ---- Game data ----
+const TYPES = ["fire","electric","grass","water","normal"];
+// effectiveness[attack][defend] = multiplier
+const EFF = {
+  fire:     { grass:2.0, water:0.5, fire:0.5, electric:1.0, normal:1.0 },
+  water:    { fire:2.0, grass:0.5, water:0.5, electric:1.0, normal:1.0 },
+  grass:    { water:2.0, fire:0.5, grass:0.5, electric:1.0, normal:1.0 },
+  electric: { water:2.0, grass:1.0, fire:1.0, electric:0.5, normal:1.0 },
+  normal:   { water:1.0, grass:1.0, fire:1.0, electric:1.0, normal:1.0 },
+};
+
+const MOVES = {
+  HotDiggityDoggyDog: { type:"fire",     power:14, name:"HotDiggityDoggyDog" },
+  ThunderWay:         { type:"electric", power:14, name:"ThunderWay" },
+  TreeStomp:          { type:"grass",    power:14, name:"Tree Stomp" },
+  SharkWave:          { type:"water",    power:14, name:"Shark Wave" },
+  Tackle:             { type:"normal",   power:8,  name:"Tackle" },
+};
+
+// The four starter CroakyMons — low-poly frog-ish creatures, one per type
+const SPECIES = {
+  Frogniter: { type:"fire",     color:"#e85a2a", accent:"#ffd05a", maxHP:34, moves:["HotDiggityDoggyDog","Tackle"] },
+  Bolttoad:  { type:"electric", color:"#f2c744", accent:"#8dd0ff", maxHP:32, moves:["ThunderWay","Tackle"] },
+  Vinehop:   { type:"grass",    color:"#4fbf5a", accent:"#c4f770", maxHP:36, moves:["TreeStomp","Tackle"] },
+  Tidefrog:  { type:"water",    color:"#3a9be0", accent:"#c9f0ff", maxHP:36, moves:["SharkWave","Tackle"] },
+};
+const ALL_SPECIES = Object.keys(SPECIES);
+
+function makeMon(species) {
+  const s = SPECIES[species];
+  return { species, type: s.type, maxHP: s.maxHP, hp: s.maxHP, moves: s.moves.slice() };
+}
+
+// Damage calc — simple, deterministic-ish
+function damage(attacker, defender, moveKey, rng) {
+  const m = MOVES[moveKey];
+  const eff = (EFF[m.type] && EFF[m.type][defender.type]) || 1.0;
+  const roll = 0.85 + rng() * 0.30;
+  const stab = attacker.type === m.type ? 1.5 : 1.0;
+  const dmg = Math.max(1, Math.floor(m.power * eff * stab * roll));
+  return { dmg, eff };
+}
+
+// ---- Town map — 15 wide x 22 tall, tile 24px, viewport shows 15x22 (whole map, no scroll) ----
+// Legend: . grass, T tall grass, H house body, R house roof, F fence, W water, P path
+const TILE = 24;
+const MAP_W = 15, MAP_H = 22;
+const MAP = [
+  "FFFFFFFFFFFFFFF",
+  "F.....PPP.....F",
+  "F.RRR.P.P.RRR.F",
+  "F.HHH.P.P.HHH.F",
+  "F.HHH.P.P.HHH.F",
+  "F.....P.P.....F",
+  "F.TTT.P.P.TTT.F",
+  "F.TTT.P.P.TTT.F",
+  "F.....P.P.....F",
+  "F.PPPPPPPPPPP.F",
+  "F.P.........P.F",
+  "F.P.TTTTTTT.P.F",
+  "F.P.TTTTTTT.P.F",
+  "F.P.TTTTTTT.P.F",
+  "F.P.........P.F",
+  "F.PPPPPPPPPPP.F",
+  "F.....P.P.....F",
+  "F.RRR.P.P.RRR.F",
+  "F.HHH.P.P.HHH.F",
+  "F.HHH.P.P.HHH.F",
+  "F.....PPP.....F",
+  "FFFFFFFFFFFFFFF",
+];
+function tileAt(x, y) {
+  if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return "F";
+  return MAP[y][x];
+}
+function walkable(t) { return t === "." || t === "P" || t === "T"; }
+
+// ---- State machine ----
+const STATE = { TITLE:"title", CHOOSE:"choose", OVERWORLD:"overworld", BATTLE:"battle", CATCH:"catch", COLLECTION:"collection", WIN:"win", MSG:"msg" };
+const game = {
+  state: STATE.TITLE,
+  playerSprite: "boy", // or girl
+  player: { x: 7, y: 10, dir: "down", moving: false, from:null, to:null, t:0 },
+  party: [], // list of caught mons {species, hp, maxHP}
+  caught: new Set(),
+  encounterCooldown: 0,
+  battle: null,
+  msg: null, // { lines:[], i:0, then:fn }
+  frame: 0,
+};
+
+// Seeded RNG so headless tests are deterministic if desired; here we use Math.random
+const rng = Math.random;
+
+// ---- Drawing helpers ----
+function clear(color) { ctx.fillStyle = color; ctx.fillRect(0,0,W,H); }
+function rect(x,y,w,h,c) { ctx.fillStyle = c; ctx.fillRect(x,y,w,h); }
+function stroke(x,y,w,h,c,lw=1) { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1); }
+function text(str, x, y, size=12, color="#fff", align="left") {
+  ctx.fillStyle = color; ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = "top"; ctx.fillText(str, x, y);
+}
+
+// Low-poly-ish house
+function drawHouse(px, py) {
+  // Roof already drawn as R tiles above; here we render the body (3 wide)
+  rect(px, py, TILE*3, TILE*2, "#d9c39a");
+  // wood beams
+  rect(px+2, py+2, TILE*3-4, 3, "#8a6a3a");
+  rect(px+2, py+TILE-1, TILE*3-4, 2, "#8a6a3a");
+  // door
+  rect(px+TILE+6, py+TILE*2-16, 12, 16, "#6b3f1f");
+  // window
+  rect(px+4, py+TILE-4, 10, 10, "#87cefa");
+  rect(px+TILE*3-14, py+TILE-4, 10, 10, "#87cefa");
+}
+function drawRoof(px, py) {
+  // Triangle-ish roof across 3 tiles
+  ctx.fillStyle = "#c0392b";
+  ctx.beginPath();
+  ctx.moveTo(px-2, py+TILE);
+  ctx.lineTo(px+TILE*1.5, py+2);
+  ctx.lineTo(px+TILE*3+2, py+TILE);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#8b2a1c";
+  ctx.fillRect(px-2, py+TILE-3, TILE*3+4, 3);
+}
+
+function drawTile(tx, ty) {
+  const t = MAP[ty][tx];
+  const x = tx*TILE, y = ty*TILE;
+  if (t === "." || t === "P" || t === "T" || t === "H" || t === "R") {
+    // grass base
+    rect(x,y,TILE,TILE, (tx+ty)%2===0 ? "#5cbf5a" : "#54b354");
+  }
+  if (t === "P") {
+    rect(x,y,TILE,TILE, "#d7c184");
+    // dashes
+    rect(x+8, y+10, 8, 4, "#c4ac6a");
+  }
+  if (t === "T") {
+    rect(x,y,TILE,TILE, "#2f8a3f");
+    for (let i=0;i<4;i++){
+      const bx = x + 3 + (i%2)*10;
+      const by = y + 4 + Math.floor(i/2)*10;
+      rect(bx, by, 3, 8, "#1c5f2a");
+      rect(bx+4, by+2, 3, 6, "#1c5f2a");
+    }
+  }
+  if (t === "F") {
+    rect(x,y,TILE,TILE, "#7fbf7d");
+    rect(x, y+8, TILE, 3, "#5a3a1a");
+    rect(x, y+16, TILE, 3, "#5a3a1a");
+    rect(x+4, y+2, 3, TILE-4, "#7a4e26");
+    rect(x+TILE-7, y+2, 3, TILE-4, "#7a4e26");
+  }
+  if (t === "W") {
+    rect(x,y,TILE,TILE, "#3a9be0");
+    rect(x+4, y+6, 6, 2, "#c9f0ff");
+    rect(x+14, y+14, 6, 2, "#c9f0ff");
+  }
+}
+
+function drawMap() {
+  clear("#3a7d4a");
+  // Pass 1: ground
+  for (let y=0;y<MAP_H;y++) for (let x=0;x<MAP_W;x++) drawTile(x,y);
+  // Pass 2: houses (drawn once per top-left of a 3-wide H)
+  for (let y=0;y<MAP_H;y++) for (let x=0;x<MAP_W;x++) {
+    if (MAP[y][x] === "H" && (x===0 || MAP[y][x-1] !== "H") && (y===0 || MAP[y-1][x] !== "H")) {
+      drawHouse(x*TILE, y*TILE);
+    }
+    if (MAP[y][x] === "R" && (x===0 || MAP[y][x-1] !== "R")) {
+      drawRoof(x*TILE, y*TILE);
+    }
+  }
+}
+
+function drawPlayer() {
+  const p = game.player;
+  let px, py;
+  if (p.moving) {
+    const t = p.t;
+    px = (p.from.x + (p.to.x - p.from.x) * t) * TILE;
+    py = (p.from.y + (p.to.y - p.from.y) * t) * TILE;
+  } else {
+    px = p.x * TILE; py = p.y * TILE;
+  }
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-2, 8, 3, 0, 0, Math.PI*2); ctx.fill();
+  // body
+  const shirt = game.playerSprite === "boy" ? "#4a7fd6" : "#e05aa8";
+  const hair  = game.playerSprite === "boy" ? "#4a2a10" : "#c48a1a";
+  rect(px+7, py+10, 10, 9, shirt);
+  rect(px+7, py+18, 4, 5, "#2a3a6a");
+  rect(px+13, py+18, 4, 5, "#2a3a6a");
+  // head
+  rect(px+8, py+3, 8, 8, "#f2c9a0");
+  rect(px+8, py+2, 8, 3, hair);
+  if (game.playerSprite === "girl") { rect(px+7, py+5, 1, 5, hair); rect(px+16, py+5, 1, 5, hair); }
+  // face facing dir
+  const eyeY = py+6;
+  if (p.dir === "down")  { rect(px+10, eyeY, 1, 2, "#000"); rect(px+13, eyeY, 1, 2, "#000"); }
+  if (p.dir === "up")    { /* no eyes */ rect(px+9, py+2, 6, 1, hair); }
+  if (p.dir === "left")  { rect(px+10, eyeY, 1, 2, "#000"); }
+  if (p.dir === "right") { rect(px+13, eyeY, 1, 2, "#000"); }
+}
+
+// Draw a CroakyMon — stylised low-poly frog, colored by species
+function drawMon(m, cx, cy, scale=1, facing=1) {
+  const s = SPECIES[m.species];
+  const S = scale;
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath(); ctx.ellipse(cx, cy+22*S, 24*S, 5*S, 0, 0, Math.PI*2); ctx.fill();
+  // body (diamond-ish low-poly)
+  ctx.fillStyle = s.color;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy-18*S);
+  ctx.lineTo(cx+22*S, cy);
+  ctx.lineTo(cx+16*S, cy+20*S);
+  ctx.lineTo(cx-16*S, cy+20*S);
+  ctx.lineTo(cx-22*S, cy);
+  ctx.closePath(); ctx.fill();
+  // belly
+  ctx.fillStyle = s.accent;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy-4*S);
+  ctx.lineTo(cx+12*S, cy+8*S);
+  ctx.lineTo(cx+8*S, cy+18*S);
+  ctx.lineTo(cx-8*S, cy+18*S);
+  ctx.lineTo(cx-12*S, cy+8*S);
+  ctx.closePath(); ctx.fill();
+  // eyes (bulging frog eyes)
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(cx-9*S*facing, cy-16*S, 6*S, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+9*S*facing, cy-16*S, 6*S, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#111";
+  ctx.beginPath(); ctx.arc(cx-9*S*facing, cy-16*S, 2.5*S, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+9*S*facing, cy-16*S, 2.5*S, 0, Math.PI*2); ctx.fill();
+  // mouth
+  ctx.strokeStyle = "#3a1a1a"; ctx.lineWidth = 2*S;
+  ctx.beginPath(); ctx.moveTo(cx-6*S, cy-2*S); ctx.lineTo(cx+6*S, cy-2*S); ctx.stroke();
+}
+
+// ---- Overworld update ----
+function tryStartMove(dx, dy, dir) {
+  const p = game.player;
+  if (p.moving) return;
+  p.dir = dir;
+  const nx = p.x + dx, ny = p.y + dy;
+  if (!walkable(tileAt(nx, ny))) return;
+  p.from = { x: p.x, y: p.y };
+  p.to = { x: nx, y: ny };
+  p.moving = true; p.t = 0;
+}
+
+function updateOverworld() {
+  const p = game.player;
+  if (p.moving) {
+    p.t += 0.14;
+    if (p.t >= 1) {
+      p.t = 1; p.moving = false;
+      p.x = p.to.x; p.y = p.to.y;
+      // encounter check on tall grass
+      if (tileAt(p.x, p.y) === "T" && game.encounterCooldown <= 0) {
+        if (rng() < 0.28) startEncounter();
+        else game.encounterCooldown = 3;
+      } else if (game.encounterCooldown > 0) {
+        game.encounterCooldown--;
+      }
+    }
+  } else {
+    if (keys.up)         tryStartMove(0, -1, "up");
+    else if (keys.down)  tryStartMove(0,  1, "down");
+    else if (keys.left)  tryStartMove(-1, 0, "left");
+    else if (keys.right) tryStartMove(1,  0, "right");
+    if (pressed.b) game.state = STATE.COLLECTION;
+  }
+}
+
+// ---- Encounter / Battle ----
+function startEncounter() {
+  // ensure player has at least one mon
+  if (game.party.length === 0) {
+    // Give a starter matching player's first step — random
+    const starter = ALL_SPECIES[Math.floor(rng()*ALL_SPECIES.length)];
+    const mon = makeMon(starter);
+    game.party.push(mon);
+    game.caught.add(starter);
+    showMsg([`A wild CroakyMon appears!`, `Professor Ribbit gave you a ${starter} to fight with!`], () => enterBattle(starter));
+  } else {
+    enterBattle();
+  }
+}
+
+function enterBattle(forceWildDifferentFrom) {
+  // pick a wild species (favour ones not yet caught if any remain)
+  const remaining = ALL_SPECIES.filter(s => !game.caught.has(s));
+  let pool = remaining.length ? remaining : ALL_SPECIES;
+  if (forceWildDifferentFrom) pool = pool.filter(s => s !== forceWildDifferentFrom) || pool;
+  if (pool.length === 0) pool = ALL_SPECIES;
+  const wildSp = pool[Math.floor(rng()*pool.length)];
+  const wild = makeMon(wildSp);
+  const active = game.party[0];
+  game.battle = {
+    wild, active,
+    menu: "root", cursor: 0,
+    log: [`A wild ${wildSp} appeared!`, `Go, ${active.species}!`],
+    turnLock: false, ended: false, caughtThis: false, ranAway: false,
+    catchAttempts: 0,
+  };
+  game.state = STATE.BATTLE;
+}
+
+const ROOT_OPTS = ["FIGHT","CATCH","RUN"];
+function updateBattle() {
+  const b = game.battle;
+  if (!b || b.turnLock) return;
+
+  if (b.ended) {
+    if (pressed.a) {
+      if (game.caught.size === ALL_SPECIES.length) {
+        game.state = STATE.WIN;
+      } else {
+        game.state = STATE.OVERWORLD;
+        game.encounterCooldown = 4;
+      }
+      game.battle = null;
+    }
+    return;
+  }
+
+  if (b.menu === "root") {
+    if (pressed.up)   b.cursor = (b.cursor + ROOT_OPTS.length - 1) % ROOT_OPTS.length;
+    if (pressed.down) b.cursor = (b.cursor + 1) % ROOT_OPTS.length;
+    if (pressed.left || pressed.right) {} // no-op
+    if (pressed.a) {
+      const choice = ROOT_OPTS[b.cursor];
+      if (choice === "FIGHT") { b.menu = "fight"; b.cursor = 0; }
+      else if (choice === "CATCH") { doCatch(); }
+      else if (choice === "RUN") { b.log = [`Got away safely!`]; b.ended = true; b.ranAway = true; }
+    }
+  } else if (b.menu === "fight") {
+    const moves = b.active.moves;
+    if (pressed.up || pressed.left)   b.cursor = (b.cursor + moves.length - 1) % moves.length;
+    if (pressed.down || pressed.right) b.cursor = (b.cursor + 1) % moves.length;
+    if (pressed.b) { b.menu = "root"; b.cursor = 0; return; }
+    if (pressed.a) {
+      const moveKey = moves[b.cursor];
+      doFightTurn(moveKey);
+    }
+  }
+}
+
+function doFightTurn(moveKey) {
+  const b = game.battle;
+  b.turnLock = true;
+  const m = MOVES[moveKey];
+  const r1 = damage(b.active, b.wild, moveKey, rng);
+  b.wild.hp = Math.max(0, b.wild.hp - r1.dmg);
+  const lines = [`${b.active.species} used ${m.name}!`, effLine(r1.eff, r1.dmg)];
+  if (b.wild.hp <= 0) {
+    lines.push(`Wild ${b.wild.species} fainted!`);
+    lines.push(`It ran off before you could catch it.`);
+    showMsg(lines, () => { b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+    return;
+  }
+  // Enemy turn
+  const enemyMove = b.wild.moves[Math.floor(rng()*b.wild.moves.length)];
+  const em = MOVES[enemyMove];
+  const r2 = damage(b.wild, b.active, enemyMove, rng);
+  b.active.hp = Math.max(0, b.active.hp - r2.dmg);
+  lines.push(`Wild ${b.wild.species} used ${em.name}!`);
+  lines.push(effLine(r2.eff, r2.dmg));
+  if (b.active.hp <= 0) {
+    lines.push(`${b.active.species} fainted!`);
+    lines.push(`You scurried home to recover.`);
+    showMsg(lines, () => {
+      // Revive party fully so game is child-friendly
+      game.party.forEach(m => m.hp = m.maxHP);
+      b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0;
+    });
+    return;
+  }
+  showMsg(lines, () => { b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+}
+
+function effLine(eff, dmg) {
+  if (eff > 1.5) return `It's super effective! (${dmg})`;
+  if (eff < 0.9) return `It's not very effective... (${dmg})`;
+  return `Hit for ${dmg}.`;
+}
+
+function doCatch() {
+  const b = game.battle;
+  b.turnLock = true;
+  b.catchAttempts++;
+  // Chance depends on remaining HP fraction of wild
+  const frac = b.wild.hp / b.wild.maxHP;
+  const chance = Math.max(0.15, 0.85 - frac * 0.7); // 15% at full HP, ~85% at near-zero
+  const success = rng() < chance;
+  const lines = [`You threw a Froggo Ball!`, `... shake ... shake ...`];
+  if (success) {
+    lines.push(`Gotcha! ${b.wild.species} was caught!`);
+    if (!game.caught.has(b.wild.species)) {
+      game.caught.add(b.wild.species);
+      game.party.push(makeMon(b.wild.species));
+      lines.push(`A new CroakyMon joined your team!`);
+    } else {
+      lines.push(`(You already have one — you set it free.)`);
+    }
+    showMsg(lines, () => { b.ended = true; b.caughtThis = true; b.turnLock = false; });
+  } else {
+    lines.push(`Oh no! The ${b.wild.species} broke free!`);
+    // enemy gets a turn
+    const enemyMove = b.wild.moves[Math.floor(rng()*b.wild.moves.length)];
+    const em = MOVES[enemyMove];
+    const r = damage(b.wild, b.active, enemyMove, rng);
+    b.active.hp = Math.max(0, b.active.hp - r.dmg);
+    lines.push(`Wild ${b.wild.species} used ${em.name}!`);
+    lines.push(effLine(r.eff, r.dmg));
+    if (b.active.hp <= 0) {
+      lines.push(`${b.active.species} fainted!`);
+      lines.push(`You scurried home to recover.`);
+      showMsg(lines, () => {
+        game.party.forEach(m => m.hp = m.maxHP);
+        b.ended = true; b.turnLock = false;
+      });
+    } else {
+      showMsg(lines, () => { b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+    }
+  }
+}
+
+// ---- Message overlay ----
+function showMsg(lines, then) {
+  game.msg = { lines, i:0, then };
+}
+function updateMsg() {
+  if (!game.msg) return;
+  if (pressed.a) {
+    game.msg.i++;
+    if (game.msg.i >= game.msg.lines.length) {
+      const fn = game.msg.then;
+      game.msg = null;
+      if (fn) fn();
+    }
+  }
+}
+function drawMsg() {
+  if (!game.msg) return;
+  const y = H - 130;
+  rect(10, y, W-20, 110, "rgba(0,0,0,0.85)");
+  stroke(10, y, W-20, 110, "#fff", 2);
+  const line = game.msg.lines[game.msg.i];
+  wrapText(line, 22, y+16, W-44, 18, 14, "#fff");
+  text("A: next", W-24, y+110-18, 11, "#ffcf3a", "right");
+}
+function wrapText(str, x, y, maxW, lh, size, color) {
+  ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.fillStyle = color; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const words = str.split(" "); let line = "", yy = y;
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, yy); yy += lh; line = w;
+    } else line = test;
+  }
+  if (line) ctx.fillText(line, x, yy);
+}
+
+// ---- Screens ----
+function drawTitle() {
+  clear("#1a1e46");
+  // low-poly hills
+  ctx.fillStyle = "#2a3d7a";
+  ctx.beginPath(); ctx.moveTo(0, 300); ctx.lineTo(120, 220); ctx.lineTo(240, 320); ctx.lineTo(360, 230); ctx.lineTo(360, 400); ctx.lineTo(0, 400); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#3a5f2a";
+  ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(90, 320); ctx.lineTo(200, 400); ctx.lineTo(320, 340); ctx.lineTo(360, 380); ctx.lineTo(360, 640); ctx.lineTo(0, 640); ctx.closePath(); ctx.fill();
+  // mascot
+  drawMon({species:"Vinehop", type:"grass"}, W/2, 250, 1.6, 1);
+  text("CroakyMon", W/2, 60, 34, "#ffcf3a", "center");
+  text("Gotta Catch Them All!", W/2, 100, 16, "#4be0d0", "center");
+  text("v" + VERSION, W/2, 128, 10, "#8892c8", "center");
+  text("Press A / Space / Tap A", W/2, 500, 14, "#fff", "center");
+  text("Fundude Town awaits", W/2, 524, 12, "#a6adcf", "center");
+  if (pressed.a) game.state = STATE.CHOOSE;
+}
+
+function drawChoose() {
+  clear("#141a3a");
+  text("Choose Your Trainer", W/2, 60, 22, "#ffcf3a", "center");
+  text("Left / Right to pick, A to start", W/2, 90, 12, "#a6adcf", "center");
+  // Boy on left, Girl on right
+  const boyX = 100, girlX = 260, y = 250;
+  drawTrainerBig(boyX, y, "boy");
+  drawTrainerBig(girlX, y, "girl");
+  text("Boy", boyX, 380, 16, "#fff", "center");
+  text("Girl", girlX, 380, 16, "#fff", "center");
+  const sel = game.playerSprite === "boy" ? boyX : girlX;
+  stroke(sel-50, y-90, 100, 200, "#ffcf3a", 3);
+  if (pressed.left)  game.playerSprite = "boy";
+  if (pressed.right) game.playerSprite = "girl";
+  if (pressed.a) {
+    game.state = STATE.OVERWORLD;
+    showMsg([
+      `Welcome to Fundude!`,
+      `The town is full of wild CroakyMons hiding in the tall grass.`,
+      `Watch out for Team Evil Soup — they want to turn CroakyMons into soup!`,
+      `Walk into tall grass to find your first CroakyMon.`,
+      `Arrows/WASD to move. B or Y to see your team.`
+    ], null);
+  }
+}
+function drawTrainerBig(cx, cy, kind) {
+  const shirt = kind === "boy" ? "#4a7fd6" : "#e05aa8";
+  const hair  = kind === "boy" ? "#4a2a10" : "#c48a1a";
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(cx, cy+90, 40, 8, 0, 0, Math.PI*2); ctx.fill();
+  // legs
+  rect(cx-20, cy+40, 16, 45, "#2a3a6a");
+  rect(cx+4, cy+40, 16, 45, "#2a3a6a");
+  // body
+  rect(cx-24, cy-20, 48, 65, shirt);
+  // head
+  rect(cx-18, cy-70, 36, 40, "#f2c9a0");
+  rect(cx-18, cy-72, 36, 14, hair);
+  if (kind === "girl") { rect(cx-22, cy-58, 4, 25, hair); rect(cx+18, cy-58, 4, 25, hair); }
+  // eyes
+  rect(cx-9, cy-52, 4, 5, "#111"); rect(cx+5, cy-52, 4, 5, "#111");
+}
+
+function drawOverworld() {
+  drawMap();
+  drawPlayer();
+  // HUD
+  rect(0, 0, W, 22, "rgba(0,0,0,0.55)");
+  text(`Fundude Town`, 8, 5, 12, "#ffcf3a");
+  text(`Caught: ${game.caught.size}/${ALL_SPECIES.length}`, W-8, 5, 12, "#4be0d0", "right");
+}
+
+function drawBattle() {
+  const b = game.battle;
+  // sky gradient
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, "#4a7fd6"); g.addColorStop(1, "#9ec3f0");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // ground platforms
+  ctx.fillStyle = "#7d5a2a";
+  ctx.beginPath(); ctx.ellipse(W-90, 210, 80, 22, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(90, 360, 90, 26, 0, 0, Math.PI*2); ctx.fill();
+  // enemy label + hp
+  drawHPBox(20, 30, `Wild ${b.wild.species}`, b.wild.hp, b.wild.maxHP);
+  drawMon(b.wild, W-90, 200, 1.4, -1);
+  // player mon + hp
+  drawMon(b.active, 90, 340, 1.6, 1);
+  drawHPBox(W-190, 300, `${b.active.species}`, b.active.hp, b.active.maxHP);
+
+  // Menu
+  const y = H - 200;
+  rect(0, y, W, 200, "#0e1230");
+  stroke(0, y, W, 200, "#4be0d0", 2);
+  if (!b.ended) {
+    if (b.menu === "root") {
+      text(`What will ${b.active.species} do?`, 16, y+12, 13, "#fff");
+      ROOT_OPTS.forEach((opt, i) => {
+        const oy = y+40 + i*22;
+        text((i === b.cursor ? "> " : "  ") + opt, 24, oy, 15, i===b.cursor ? "#ffcf3a" : "#fff");
+      });
+      text("A: select", W-16, y+180, 10, "#a6adcf", "right");
+    } else if (b.menu === "fight") {
+      text(`Choose a move:`, 16, y+12, 13, "#fff");
+      const moves = b.active.moves;
+      moves.forEach((mk, i) => {
+        const m = MOVES[mk];
+        const oy = y+40 + i*22;
+        const label = `${m.name}  [${m.type}]`;
+        text((i === b.cursor ? "> " : "  ") + label, 24, oy, 13, i===b.cursor ? "#ffcf3a" : "#fff");
+      });
+      text("A: use   B: back", W-16, y+180, 10, "#a6adcf", "right");
+    }
+  } else {
+    text(`Press A to continue`, W/2, y+90, 14, "#ffcf3a", "center");
+  }
+}
+
+function drawHPBox(x, y, name, hp, maxHP) {
+  rect(x, y, 170, 44, "rgba(0,0,0,0.7)");
+  stroke(x, y, 170, 44, "#fff", 2);
+  text(name, x+8, y+6, 12, "#fff");
+  const bw = 150, frac = Math.max(0, hp/maxHP);
+  rect(x+8, y+26, bw, 8, "#333");
+  const color = frac > 0.5 ? "#4bd07a" : frac > 0.2 ? "#ffcf3a" : "#e05a5a";
+  rect(x+8, y+26, bw*frac, 8, color);
+  text(`${hp}/${maxHP}`, x+162, y+6, 10, "#a6adcf", "right");
+}
+
+function drawCollection() {
+  clear("#0e1230");
+  text("Your Team", W/2, 20, 22, "#ffcf3a", "center");
+  text(`${game.caught.size} of ${ALL_SPECIES.length} caught`, W/2, 50, 12, "#a6adcf", "center");
+  ALL_SPECIES.forEach((sp, i) => {
+    const cx = 90 + (i%2)*180;
+    const cy = 130 + Math.floor(i/2)*180;
+    rect(cx-70, cy-60, 140, 150, "#1a2050");
+    stroke(cx-70, cy-60, 140, 150, "#4be0d0", 1);
+    if (game.caught.has(sp)) {
+      drawMon({species:sp, type:SPECIES[sp].type}, cx, cy+10, 1.0, 1);
+      text(sp, cx, cy+58, 12, "#fff", "center");
+      text(SPECIES[sp].type, cx, cy+74, 10, "#a6adcf", "center");
+    } else {
+      text("???", cx, cy+10, 24, "#333", "center");
+      text("Not yet caught", cx, cy+58, 10, "#666", "center");
+    }
+  });
+  text("B: back", W/2, H-40, 12, "#ffcf3a", "center");
+  if (pressed.b) game.state = STATE.OVERWORLD;
+}
+
+function drawWin() {
+  clear("#1a1e46");
+  text("You did it!", W/2, 80, 28, "#ffcf3a", "center");
+  text("You caught them all!", W/2, 120, 18, "#4be0d0", "center");
+  drawMon({species:"Bolttoad"}, 90, 320, 1.2, 1);
+  drawMon({species:"Frogniter"}, 180, 260, 1.4, 1);
+  drawMon({species:"Vinehop"}, 270, 320, 1.2, -1);
+  drawMon({species:"Tidefrog"}, 180, 400, 1.3, 1);
+  text("(Team Evil Soup will return... v0.2)", W/2, 540, 11, "#a6adcf", "center");
+  text("A: play again", W/2, 580, 14, "#ffcf3a", "center");
+  if (pressed.a) {
+    game.party = []; game.caught = new Set();
+    game.player.x = 7; game.player.y = 10;
+    game.state = STATE.TITLE;
+  }
+}
+
+// ---- Main loop ----
+function tick() {
+  game.frame++;
+  // Update
+  if (game.msg) {
+    updateMsg();
+  } else {
+    switch (game.state) {
+      case STATE.TITLE: break;
+      case STATE.CHOOSE: break;
+      case STATE.OVERWORLD: updateOverworld(); break;
+      case STATE.BATTLE: updateBattle(); break;
+      case STATE.COLLECTION: break;
+      case STATE.WIN: break;
+    }
+  }
+  // Draw
+  switch (game.state) {
+    case STATE.TITLE: drawTitle(); break;
+    case STATE.CHOOSE: drawChoose(); break;
+    case STATE.OVERWORLD: drawOverworld(); break;
+    case STATE.BATTLE: drawBattle(); break;
+    case STATE.COLLECTION: drawCollection(); break;
+    case STATE.WIN: drawWin(); break;
+  }
+  drawMsg();
+
+  // clear pressed
+  for (const k in pressed) pressed[k] = false;
+
+  requestAnimationFrame(tick);
+}
+
+// Title-screen key hints depending on device
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
