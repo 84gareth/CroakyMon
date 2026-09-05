@@ -19,10 +19,21 @@ LOG="$REPO/.tools/sync.log"
 STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 log() { printf '[%s] %s\n' "$STAMP" "$*" >> "$LOG"; }
 
-# Prevent overlapping runs (defensive; launchd throttles too)
+# Prevent overlapping runs (macOS-portable: mkdir is atomic, no flock needed)
 LOCK="$REPO/.tools/.sync.lock"
-exec 9>"$LOCK"
-flock -n 9 || exit 0
+# Earlier versions of this script created the lock as a file. Clear that so
+# mkdir can turn it into a dir.
+[ -f "$LOCK" ] && rm -f "$LOCK"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  # If the lock dir is stale (older than 5 min) clear it and try again
+  if [ -d "$LOCK" ] && find "$LOCK" -maxdepth 0 -mmin +5 | grep -q .; then
+    rmdir "$LOCK" 2>/dev/null || true
+    mkdir "$LOCK" 2>/dev/null || exit 0
+  else
+    exit 0
+  fi
+fi
+trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 # 1) Sweep known junk before doing anything else
 find "$REPO" -name '.DS_Store' -delete 2>/dev/null
