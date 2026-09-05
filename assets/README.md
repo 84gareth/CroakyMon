@@ -4,6 +4,7 @@ Drop Meshy `.glb` exports in here, one per species. The game auto-loads any it f
 
 Expected filenames (case-sensitive):
 - `crimson-fungus.glb` — fire starter (Crimson Fungus)
+- `crypty-crab.glb` — wild-only normal/ghost creature (CryptyCrab)
 - `vinehop.glb` — grass starter (sprout turtle) — optional
 - `tidefrog.glb` — water starter (ink squid) — optional
 - `bolttoad.glb` — electric wild-only (lightning bird) — optional

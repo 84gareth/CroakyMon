@@ -1,6 +1,6 @@
 # Handover — CroakyMon Gotta Catch Them All!
 
-**Version:** 0.4.0
+**Version:** 0.5.0
 **Owner:** Gareth
 **Designer:** Gareth's child
 **Last updated:** 2026-09-05
@@ -45,6 +45,17 @@ Then open http://localhost:8000/croakymon.html. On GitHub Pages, no extra setup 
 | 8 | Win | Catch them all |
 | 9 | Art | Low-poly and colourful |
 | 10 | Name | CroakyMon Gotta Catch Them All! |
+
+## New in v0.5.0
+**CryptyCrab — first wild-only dual-type creature.**
+- New species **CryptyCrab**: dual-type normal/ghost, wild-only (not in the starter list). HP 35, knows *Spooky Pinch* (ghost) and *Tackle* (normal); both get STAB.
+- New elemental type **Ghost** added to `EFF`. Deliberately kept child-friendly: normal ↔ ghost is 0.5x both ways (never the classical 0x), so no battle can soft-lock.
+- `damage()` extended for **dual-type defence**: effectiveness multiplies through every type on the defender. Single-type mons behave exactly as before.
+- STAB now checks either of the attacker's two types, so a normal-move on CryptyCrab or a ghost-move both get the 1.5x boost.
+- Polygon fallback **`drawCryptyCrab`** — wispy purple-white crab with stalked eyes, two pincers (one grounded, one floating with a ghost-trail), and a soft aura underneath.
+- Added to the **title screen mascot lineup** and the **win-screen ensemble**, both re-laid-out for five creatures.
+- **Collection screen** rebuilt as a proper 2×3 grid so the fifth card fits without overflowing the fixed portrait viewport. Cards now show `type / type2` for dual-typed species.
+- `Mon3D.CONFIG` gains `CryptyCrab: "assets/crypty-crab.glb"` — as soon as that file is committed, the 3D model renders in place of the polygon art (identical pipeline as Crimson Fungus).
 
 ## New in v0.4.0
 **Real 3D models for CroakyMons — Meshy `.glb` pipeline.**
@@ -139,6 +150,7 @@ All also know Tackle (normal) as a backup.
 - **v1.0** — Full 8–12 species roster the child helps name; boss fight with Team Evil Soup's Chef.
 
 ## Changelog
+- **0.5.0** (2026-09-05) — Added CryptyCrab (normal/ghost, wild-only) with `Spooky Pinch`; added Ghost elemental type; dual-type defence + dual-type STAB in `damage()`; polygon fallback; title + win + collection screens updated for five species; asset slot for `crypty-crab.glb`. All previous validation still passes, plus new dual-type asserts.
 - **0.4.0** (2026-09-05) — Real 3D CroakyMon models via Three.js + GLTFLoader; hidden offscreen WebGL render blitted onto the 2D canvas per draw call; auto-fit / centred / three-point lit / idle-bobbing; graceful fallback to polygon art per species; new `assets/` folder for `.glb` files with README; single-file rule relaxed for this project only.
 - **0.3.0** (2026-09-05) — Professor Ribbit's lab (top-left house, green roof, "LAB" doormat); wild encounters gated on picking a starter; three-card starter picker (Frogniter / Vinehop / Tidefrog); blinking HUD nudge until picked. Removed the old random-starter mid-battle fallback. All previous validation still passes; new map-shape assertions added.
 - **0.2.0** (2026-09-05) — Varied creature silhouettes (dragon whelp, lightning bird, sprout turtle, ink squid); per-type move VFX with windup, impact tint, ring flash, screen shake and particles; WebAudio SFX for every action and a mood-aware chiptune music loop; SOUND mute button. All previous validation still passes.

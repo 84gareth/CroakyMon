@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.4.1</title>
+<title>CroakyMon Gotta Catch Them All! v0.5.0</title>
 <style>
   :root { --safe-b: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -46,7 +46,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.4.1</div>
+  <div id="note">v0.5.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -62,7 +62,7 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.4.1
+// CroakyMon Gotta Catch Them All! — v0.5.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
@@ -92,6 +92,7 @@ const Mon3D = (() => {
   const REG = {};        // species -> { model, box, ready }
   const CONFIG = {       // species -> asset URL (relative)
     CrimsonFungus: "assets/crimson-fungus.glb",
+    CryptyCrab:    "assets/crypty-crab.glb",
     // Vinehop: "assets/vinehop.glb",
     // Tidefrog: "assets/tidefrog.glb",
     // Bolttoad: "assets/bolttoad.glb",
@@ -400,18 +401,23 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
+// Type chart. Ghost added in v0.5.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// ways (not the classical 0x) so a battle can never be un-winnable — this game
+// is for kids.
 const EFF = {
-  fire:     { grass:2.0, water:0.5, fire:0.5, electric:1.0, normal:1.0 },
-  water:    { fire:2.0, grass:0.5, water:0.5, electric:1.0, normal:1.0 },
-  grass:    { water:2.0, fire:0.5, grass:0.5, electric:1.0, normal:1.0 },
-  electric: { water:2.0, grass:1.0, fire:1.0, electric:0.5, normal:1.0 },
-  normal:   { water:1.0, grass:1.0, fire:1.0, electric:1.0, normal:1.0 },
+  fire:     { grass:2.0, water:0.5, fire:0.5, electric:1.0, normal:1.0, ghost:1.0 },
+  water:    { fire:2.0, grass:0.5, water:0.5, electric:1.0, normal:1.0, ghost:1.0 },
+  grass:    { water:2.0, fire:0.5, grass:0.5, electric:1.0, normal:1.0, ghost:1.0 },
+  electric: { water:2.0, grass:1.0, fire:1.0, electric:0.5, normal:1.0, ghost:1.0 },
+  normal:   { water:1.0, grass:1.0, fire:1.0, electric:1.0, normal:1.0, ghost:0.5 },
+  ghost:    { water:1.0, grass:1.0, fire:1.0, electric:1.0, normal:0.5, ghost:2.0 },
 };
 const MOVES = {
   HotDiggityDoggyDog: { type:"fire",     power:14, name:"HotDiggityDoggyDog" },
   ThunderWay:         { type:"electric", power:14, name:"ThunderWay" },
   TreeStomp:          { type:"grass",    power:14, name:"Tree Stomp" },
   SharkWave:          { type:"water",    power:14, name:"Shark Wave" },
+  SpookyPinch:        { type:"ghost",    power:14, name:"Spooky Pinch" },
   Tackle:             { type:"normal",   power:8,  name:"Tackle" },
 };
 
@@ -422,6 +428,8 @@ const SPECIES = {
   Bolttoad:  { type:"electric", color:"#f2c744", accent:"#fff2a8", maxHP:32, moves:["ThunderWay","Tackle"],         shape:"bird" },
   Vinehop:   { type:"grass",    color:"#4fbf5a", accent:"#c4f770", maxHP:36, moves:["TreeStomp","Tackle"],          shape:"turtle" },
   Tidefrog:  { type:"water",    color:"#3a9be0", accent:"#c9f0ff", maxHP:36, moves:["SharkWave","Tackle"],          shape:"squid" },
+  // Dual-type wild-only creature: normal + ghost. Both moves get STAB.
+  CryptyCrab:{ type:"normal",   type2:"ghost", color:"#b8a8d0", accent:"#e8dfff", maxHP:35, moves:["SpookyPinch","Tackle"], shape:"crab" },
 };
 const ALL_SPECIES = Object.keys(SPECIES);
 
@@ -432,13 +440,22 @@ function displayName(sp) { return sp.replace(/([a-z])([A-Z])/g, "$1 $2"); }
 
 function makeMon(species) {
   const s = SPECIES[species];
-  return { species, type: s.type, maxHP: s.maxHP, hp: s.maxHP, moves: s.moves.slice() };
+  return { species, type: s.type, type2: s.type2 || null, maxHP: s.maxHP, hp: s.maxHP, moves: s.moves.slice() };
 }
 function damage(attacker, defender, moveKey, rng) {
   const m = MOVES[moveKey];
-  const eff = (EFF[m.type] && EFF[m.type][defender.type]) || 1.0;
+  const row = EFF[m.type] || {};
+  // Dual-type defence: multiply the effectiveness through every type the
+  // defender has. Species with a single .type behave exactly as before.
+  const defTypes = [defender.type];
+  if (defender.type2) defTypes.push(defender.type2);
+  let eff = 1.0;
+  for (const t of defTypes) eff *= (row[t] != null ? row[t] : 1.0);
   const roll = 0.85 + rng() * 0.30;
-  const stab = attacker.type === m.type ? 1.5 : 1.0;
+  // STAB: attacker gets the bonus if the move matches either of its types.
+  const atkTypes = [attacker.type];
+  if (attacker.type2) atkTypes.push(attacker.type2);
+  const stab = atkTypes.includes(m.type) ? 1.5 : 1.0;
   const dmg = Math.max(1, Math.floor(m.power * eff * stab * roll));
   return { dmg, eff };
 }
@@ -733,6 +750,56 @@ function drawTidefrog(cx, cy, S, facing) {
   ctx.fillStyle = "#1a3a5a"; ctx.beginPath(); ctx.arc(cx, cy+2*S, 2*S, 0, Math.PI); ctx.fill();
 }
 
+// CryptyCrab — dual-type normal/ghost. Wispy purple-white crab with a ghostly
+// aura and two big pincers, one floating away from the body.
+function drawCryptyCrab(cx, cy, S, facing) {
+  shadow(cx, cy+22*S, 24*S, 5*S);
+  const f = facing;
+  // Ghostly aura underneath
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#e8dfff";
+  ctx.beginPath(); ctx.ellipse(cx, cy+8*S, 30*S, 22*S, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+  // Legs (three per side)
+  ctx.strokeStyle = "#7f6ea0"; ctx.lineWidth = 3*S; ctx.lineCap = "round";
+  for (let i=0;i<3;i++){
+    const off = (i-1)*7*S;
+    ctx.beginPath();
+    ctx.moveTo(cx-14*S, cy+8*S);
+    ctx.quadraticCurveTo(cx-22*S+off, cy+18*S, cx-24*S+off, cy+22*S);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx+14*S, cy+8*S);
+    ctx.quadraticCurveTo(cx+22*S-off, cy+18*S, cx+24*S-off, cy+22*S);
+    ctx.stroke();
+  }
+  // Body (rounded hex)
+  polyFill([[cx-16*S, cy-2*S],[cx-10*S, cy-12*S],[cx+10*S, cy-12*S],
+            [cx+16*S, cy-2*S],[cx+10*S, cy+10*S],[cx-10*S, cy+10*S]], "#b8a8d0");
+  // Belly highlight
+  polyFill([[cx-8*S, cy-2*S],[cx+8*S, cy-2*S],[cx+6*S, cy+8*S],[cx-6*S, cy+8*S]], "#e8dfff");
+  // Stalked eyes
+  ctx.strokeStyle = "#7f6ea0"; ctx.lineWidth = 2*S;
+  ctx.beginPath(); ctx.moveTo(cx-6*S, cy-10*S); ctx.lineTo(cx-8*S, cy-18*S); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+6*S, cy-10*S); ctx.lineTo(cx+8*S, cy-18*S); ctx.stroke();
+  pupil(cx-8*S, cy-20*S, 3*S);
+  pupil(cx+8*S, cy-20*S, 3*S);
+  // Grounded pincer (opposite the facing)
+  polyFill([[cx-16*S*f, cy-2*S],[cx-24*S*f, cy-8*S],[cx-22*S*f, cy+4*S]], "#b8a8d0");
+  polyFill([[cx-22*S*f, cy-8*S],[cx-28*S*f, cy-12*S],[cx-24*S*f, cy-4*S]], "#b8a8d0");
+  // Floating pincer (in the facing direction) — offset upward to look weightless
+  ctx.save();
+  ctx.globalAlpha = 0.95;
+  polyFill([[cx+18*S*f, cy-14*S],[cx+28*S*f, cy-22*S],[cx+30*S*f, cy-10*S]], "#b8a8d0");
+  polyFill([[cx+28*S*f, cy-22*S],[cx+34*S*f, cy-28*S],[cx+30*S*f, cy-18*S]], "#b8a8d0");
+  ctx.restore();
+  // Wispy ghost trail dots between body and floating pincer
+  ctx.fillStyle = "rgba(232,223,255,0.65)";
+  ctx.beginPath(); ctx.arc(cx+12*S*f, cy-6*S, 2*S, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+16*S*f, cy-10*S, 1.5*S, 0, Math.PI*2); ctx.fill();
+}
+
 function drawMon(m, cx, cy, scale=1, facing=1) {
   // Prefer real 3D model when this species has a .glb loaded
   const t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
@@ -743,6 +810,7 @@ function drawMon(m, cx, cy, scale=1, facing=1) {
   if (sh === "bird")   return drawBolttoad(cx, cy, scale, facing);
   if (sh === "turtle") return drawVinehop(cx, cy, scale, facing);
   if (sh === "squid")  return drawTidefrog(cx, cy, scale, facing);
+  if (sh === "crab")   return drawCryptyCrab(cx, cy, scale, facing);
 }
 
 // ==============================================================
@@ -1244,10 +1312,11 @@ function drawTitle() {
   ctx.beginPath(); ctx.moveTo(0, 300); ctx.lineTo(120, 220); ctx.lineTo(240, 320); ctx.lineTo(360, 230); ctx.lineTo(360, 400); ctx.lineTo(0, 400); ctx.closePath(); ctx.fill();
   ctx.fillStyle = "#3a5f2a";
   ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(90, 320); ctx.lineTo(200, 400); ctx.lineTo(320, 340); ctx.lineTo(360, 380); ctx.lineTo(360, 640); ctx.lineTo(0, 640); ctx.closePath(); ctx.fill();
-  drawMon({species:"CrimsonFungus"}, 90, 260, 1.1, 1);
-  drawMon({species:"Vinehop"},  180, 260, 1.2, 1);
-  drawMon({species:"Bolttoad"}, 270, 260, 1.1, -1);
-  drawMon({species:"Tidefrog"}, 180, 380, 1.1, 1);
+  drawMon({species:"CrimsonFungus"}, 70,  260, 1.0, 1);
+  drawMon({species:"Vinehop"},       160, 260, 1.1, 1);
+  drawMon({species:"Bolttoad"},      250, 260, 1.0, -1);
+  drawMon({species:"Tidefrog"},      120, 380, 1.0, 1);
+  drawMon({species:"CryptyCrab"},    220, 380, 1.1, -1);
   text("CroakyMon", W/2, 60, 34, "#ffcf3a", "center");
   text("Gotta Catch Them All!", W/2, 100, 16, "#4be0d0", "center");
   text("v" + VERSION, W/2, 128, 10, "#8892c8", "center");
@@ -1359,18 +1428,26 @@ function drawCollection() {
   clear("#0e1230");
   text("Your Team", W/2, 20, 22, "#ffcf3a", "center");
   text(`${game.caught.size} of ${ALL_SPECIES.length} caught`, W/2, 50, 12, "#a6adcf", "center");
+  // 2-col, 3-row grid — fits 5+ species without overflowing the fixed viewport.
+  const cardW = 150, cardH = 130, gapX = 20, gapY = 10;
+  const startX = (W - cardW*2 - gapX) / 2;
+  const startY = 80;
   ALL_SPECIES.forEach((sp, i) => {
-    const cx = 90 + (i%2)*180;
-    const cy = 130 + Math.floor(i/2)*180;
-    rect(cx-70, cy-60, 140, 150, "#1a2050");
-    stroke(cx-70, cy-60, 140, 150, "#4be0d0", 1);
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = startX + col * (cardW + gapX);
+    const y = startY + row * (cardH + gapY);
+    const cx = x + cardW / 2;
+    rect(x, y, cardW, cardH, "#1a2050");
+    stroke(x, y, cardW, cardH, "#4be0d0", 1);
     if (game.caught.has(sp)) {
-      drawMon({species:sp}, cx, cy+10, 1.0, 1);
-      text(displayName(sp), cx, cy+58, 12, "#fff", "center");
-      text(SPECIES[sp].type, cx, cy+74, 10, "#a6adcf", "center");
+      drawMon({species:sp}, cx, y + 50, 0.85, 1);
+      text(displayName(sp), cx, y + cardH - 34, 12, "#fff", "center");
+      const sd = SPECIES[sp];
+      const typeLabel = sd.type + (sd.type2 ? " / " + sd.type2 : "");
+      text(typeLabel, cx, y + cardH - 18, 10, "#a6adcf", "center");
     } else {
-      text("???", cx, cy+10, 24, "#333", "center");
-      text("Not yet caught", cx, cy+58, 10, "#666", "center");
+      text("???", cx, y + 40, 22, "#333", "center");
+      text("Not yet caught", cx, y + cardH - 24, 10, "#666", "center");
     }
   });
   text("B: back", W/2, H-40, 12, "#ffcf3a", "center");
@@ -1380,10 +1457,11 @@ function drawWin() {
   clear("#1a1e46");
   text("You did it!", W/2, 80, 28, "#ffcf3a", "center");
   text("You caught them all!", W/2, 120, 18, "#4be0d0", "center");
-  drawMon({species:"Bolttoad"}, 90, 320, 1.2, 1);
-  drawMon({species:"CrimsonFungus"}, 180, 260, 1.4, 1);
-  drawMon({species:"Vinehop"}, 270, 320, 1.2, -1);
-  drawMon({species:"Tidefrog"}, 180, 400, 1.3, 1);
+  drawMon({species:"Bolttoad"},      70,  300, 1.1, 1);
+  drawMon({species:"CrimsonFungus"}, 180, 260, 1.3, 1);
+  drawMon({species:"Vinehop"},       290, 300, 1.1, -1);
+  drawMon({species:"Tidefrog"},      120, 400, 1.1, 1);
+  drawMon({species:"CryptyCrab"},    240, 400, 1.2, -1);
   text("(Team Evil Soup will return... v0.3)", W/2, 540, 11, "#a6adcf", "center");
   text("A: play again", W/2, 580, 14, "#ffcf3a", "center");
   if (pressed.a) {
