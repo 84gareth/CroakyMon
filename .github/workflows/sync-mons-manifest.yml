@@ -1,0 +1,77 @@
+name: Sync mons manifest
+
+# When a .glb changes in assets/mons/, make sure it has an entry in mons.json.
+# Adds a default entry for new .glbs; never touches existing entries.
+
+on:
+  push:
+    paths:
+      - 'assets/mons/**.glb'
+      - 'assets/mons/mons.json'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: "!contains(github.event.head_commit.message, '[skip manifest]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync manifest
+        run: |
+          python3 - <<'PY'
+          import json, os, glob, re
+
+          mons_dir = 'assets/mons'
+          manifest_path = os.path.join(mons_dir, 'mons.json')
+
+          try:
+              with open(manifest_path, encoding='utf-8') as f:
+                  manifest = json.load(f)
+          except (FileNotFoundError, json.JSONDecodeError):
+              manifest = {}
+
+          existing = set(manifest.keys())
+          glbs = sorted(os.path.basename(p)[:-4] for p in glob.glob(os.path.join(mons_dir, '*.glb')))
+          added = []
+
+          for slug in glbs:
+              if slug in manifest:
+                  continue
+              name = ' '.join(w.capitalize() for w in re.split(r'[-_ ]+', slug) if w)
+              manifest[slug] = {
+                  "name": name,
+                  "types": ["normal"],
+                  "hp": 30,
+                  "moves": ["Tackle"],
+                  "starter": False,
+                  "shape": "blob",
+                  "color": "#a8a8a8",
+                  "accent": "#e0e0e0",
+              }
+              added.append(slug)
+
+          # Sort keys so diffs stay tidy
+          out = json.dumps(manifest, indent=2, sort_keys=True) + '\n'
+          with open(manifest_path, 'w', encoding='utf-8') as f:
+              f.write(out)
+
+          if added:
+              print("Added default entries for:", ", ".join(added))
+          else:
+              print("No new entries needed.")
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name  "mons-manifest-bot"
+          git config user.email "mons-manifest-bot@users.noreply.github.com"
+          git add assets/mons/mons.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(mons): sync manifest with new GLBs [skip manifest]"
+            git push
+          else
+            echo "Manifest already in sync."
+          fi
