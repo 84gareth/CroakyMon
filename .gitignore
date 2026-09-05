@@ -1,0 +1,14 @@
+# Dev-only extraction artefacts — regenerated per session
+script.js
+sim.js
+
+# OS / editor cruft
+.DS_Store
+*.swp
+Thumbs.db
+.vscode/
+.idea/
+
+# Backups of GLBs we optimize
+*.glb.bak
+*.glb.tmp

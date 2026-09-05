@@ -1,0 +1,60 @@
+name: Optimize GLB assets
+
+# Trigger only when a GLB in assets/ changes. Uses [skip optimize] in the
+# bot's own commit message to prevent infinite loops.
+on:
+  push:
+    paths:
+      - 'assets/**.glb'
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: "!contains(github.event.head_commit.message, '[skip optimize]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install gltf-transform CLI
+        run: npm install -g @gltf-transform/cli sharp
+
+      - name: Optimize changed GLBs
+        run: |
+          set -e
+          # Find GLBs changed in this push (fall back to all if diff isn't available)
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'assets/**.glb' 2>/dev/null || true)
+          if [ -z "$CHANGED" ]; then
+            CHANGED=$(find assets -type f -name '*.glb')
+          fi
+          echo "Files to optimize:"
+          echo "$CHANGED"
+          for f in $CHANGED; do
+            [ -f "$f" ] || continue
+            echo "--- Optimizing $f"
+            SIZE_BEFORE=$(stat -c %s "$f")
+            # 'optimize' runs Draco mesh compression + weld/dedupe/prune.
+            # Texture WebP is added separately because the flag name varies by CLI version.
+            gltf-transform optimize "$f" "$f.tmp.glb" --compress draco || cp "$f" "$f.tmp.glb"
+            mv "$f.tmp.glb" "$f"
+            gltf-transform webp "$f" "$f.tmp.glb" || cp "$f" "$f.tmp.glb"
+            mv "$f.tmp.glb" "$f"
+            SIZE_AFTER=$(stat -c %s "$f")
+            echo "    $f: $SIZE_BEFORE -> $SIZE_AFTER bytes"
+          done
+
+      - name: Commit optimized assets
+        run: |
+          git config user.name "gltf-optimizer"
+          git config user.email "gltf-optimizer@users.noreply.github.com"
+          git add 'assets/**.glb' || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(assets): optimize GLBs [skip optimize]"
+            git push
+          else
+            echo "No changes after optimization."
+          fi

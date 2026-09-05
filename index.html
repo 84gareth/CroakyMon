@@ -1,0 +1,1431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>CroakyMon Gotta Catch Them All! v0.4.1</title>
+<style>
+  :root { --safe-b: env(safe-area-inset-bottom, 0px); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a0d1e; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #frame { position: relative; background: #000; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-radius: 10px; overflow: hidden; }
+  canvas { display: block; image-rendering: pixelated; }
+  #hud { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 10px calc(8px + var(--safe-b)); display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; }
+  .pad { pointer-events: auto; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 4px; }
+  .pad button { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25); color: #fff; border-radius: 10px; font-size: 18px; font-weight: 700; }
+  .pad button:active { background: rgba(255,255,255,0.32); }
+  .pad .sp { visibility: hidden; }
+  .actions { pointer-events: auto; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .actions button { min-width: 56px; height: 44px; padding: 0 12px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,207,58,0.9); color: #1a1a1a; font-weight: 800; font-size: 14px; }
+  .actions button.sec { background: rgba(75,224,208,0.9); color: #0b1f1c; }
+  .actions button:active { transform: translateY(1px); }
+  #topbar { position: absolute; top: 6px; right: 8px; display: flex; gap: 6px; pointer-events: auto; }
+  #topbar button { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 6px; }
+  #note { position: absolute; top: 6px; left: 8px; font-size: 11px; color: rgba(255,255,255,0.6); pointer-events: none; }
+</style>
+</head>
+<body>
+<!-- Three.js for 3D CroakyMon models. Loads from jsdelivr; requires HTTP (not file://). -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+  import * as THREE from 'three';
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+  window.__THREE = THREE;
+  window.__GLTFLoader = GLTFLoader;
+  window.dispatchEvent(new Event('three-ready'));
+</script>
+
+<div id="stage"><div id="frame">
+  <canvas id="c" width="360" height="640"></canvas>
+  <div id="note">v0.4.1</div>
+  <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
+  <div id="hud">
+    <div class="pad" id="pad">
+      <span class="sp"></span><button data-k="up">▲</button><span class="sp"></span>
+      <button data-k="left">◀</button><span class="sp"></span><button data-k="right">▶</button>
+      <span class="sp"></span><button data-k="down">▼</button><span class="sp"></span>
+    </div>
+    <div class="actions">
+      <button id="btnA" data-k="a">A</button>
+      <button id="btnB" class="sec" data-k="b">B</button>
+    </div>
+  </div>
+</div></div>
+<script>
+"use strict";
+// CroakyMon Gotta Catch Them All! — v0.4.1
+// Additions this version: varied creature designs (dragon whelp, lightning bird,
+// sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
+
+const VERSION = "0.2.0";
+const W = 360, H = 640;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+function fit() {
+  const pad = 20;
+  const vw = window.innerWidth - pad, vh = window.innerHeight - pad;
+  const scale = Math.min(vw / W, vh / H);
+  const frame = document.getElementById("frame");
+  frame.style.width = Math.floor(W * scale) + "px";
+  frame.style.height = Math.floor(H * scale) + "px";
+  canvas.style.width = "100%"; canvas.style.height = "100%";
+}
+window.addEventListener("resize", fit); fit();
+
+// ==============================================================
+// Mon3D — hidden Three.js renderer for real 3D CroakyMon models.
+// Renders per species into an offscreen canvas which the 2D game
+// blits onto its main canvas via drawImage. Falls back silently to
+// polygon art when a species has no .glb loaded (yet).
+// ==============================================================
+const Mon3D = (() => {
+  const REG = {};        // species -> { model, box, ready }
+  const CONFIG = {       // species -> asset URL (relative)
+    CrimsonFungus: "assets/crimson-fungus.glb",
+    // Vinehop: "assets/vinehop.glb",
+    // Tidefrog: "assets/tidefrog.glb",
+    // Bolttoad: "assets/bolttoad.glb",
+  };
+  let three = null, renderer = null, scene = null, camera = null, lights = null;
+  let off = null; // offscreen canvas
+  const OFF_SIZE = 256; // render resolution per mon
+  let ready = false;
+
+  function init(THREE) {
+    three = THREE;
+    off = document.createElement("canvas");
+    off.width = OFF_SIZE; off.height = OFF_SIZE;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: off, antialias: true, alpha: true, premultipliedAlpha: false });
+      renderer.setPixelRatio(1);
+      renderer.setSize(OFF_SIZE, OFF_SIZE, false);
+      renderer.setClearColor(0x000000, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+    } catch (e) { console.warn("Mon3D: WebGL init failed:", e); return; }
+    scene = new THREE.Scene();
+    // Camera: near-orthographic-feeling perspective, framed for a ~2 unit tall creature
+    camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+    camera.position.set(0, 1.2, 5.5);
+    camera.lookAt(0, 1.0, 0);
+    // Lights: key + fill + rim, tuned for saturated cartoon materials
+    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    key.position.set(3, 4, 4);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x88bbff, 0.6);
+    fill.position.set(-3, 2, 2);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffcf3a, 0.5);
+    rim.position.set(0, 3, -4);
+    scene.add(rim);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    ready = true;
+  }
+  function loadAll() {
+    if (!ready) return;
+    const Loader = window.__GLTFLoader; if (!Loader) return;
+    const loader = new Loader();
+    Object.entries(CONFIG).forEach(([species, url]) => {
+      loader.load(url,
+        (gltf) => {
+          const model = gltf.scene;
+          // Auto-fit: scale/translate model so it stands ~2 units tall centred at origin
+          const box = new three.Box3().setFromObject(model);
+          const size = new three.Vector3(); box.getSize(size);
+          const center = new three.Vector3(); box.getCenter(center);
+          const target = 2.0;
+          const s = target / Math.max(size.x, size.y, size.z);
+          model.scale.setScalar(s);
+          // Recompute after scale
+          const box2 = new three.Box3().setFromObject(model);
+          const c2 = new three.Vector3(); box2.getCenter(c2);
+          const size2 = new three.Vector3(); box2.getSize(size2);
+          model.position.sub(c2);
+          model.position.y += size2.y * 0.5; // stand on ground
+          REG[species] = { model, ready: true };
+          console.log("Mon3D: loaded", species, url);
+        },
+        undefined,
+        (err) => { console.warn("Mon3D: failed to load", url, err && err.message || err); }
+      );
+    });
+  }
+  // Render a species to the offscreen canvas at a given facing (±1), then blit onto dstCtx.
+  function render(species, dstCtx, cx, cy, scale, facing, tSeconds) {
+    const entry = REG[species];
+    if (!ready || !entry || !entry.ready) return false;
+    // Clear the scene of previous mon
+    for (let i = scene.children.length - 1; i >= 0; i--) {
+      const ch = scene.children[i];
+      if (!ch.isLight) scene.remove(ch);
+    }
+    const m = entry.model;
+    m.rotation.y = (facing >= 0 ? 1 : -1) * (Math.PI * 0.25);
+    // Idle bob
+    m.position.y = (m.userData.baseY ?? m.position.y);
+    if (m.userData.baseY === undefined) m.userData.baseY = m.position.y;
+    m.position.y = m.userData.baseY + Math.sin(tSeconds * 3) * 0.05;
+    scene.add(m);
+    renderer.render(scene, camera);
+    // Blit — scale factor 1.0 in the 2D game maps to a ~50px sprite; use similar bounds
+    const drawSize = 96 * scale;
+    dstCtx.save();
+    // small shadow
+    dstCtx.fillStyle = "rgba(0,0,0,0.25)";
+    dstCtx.beginPath(); dstCtx.ellipse(cx, cy + 22*scale, 22*scale, 5*scale, 0, 0, Math.PI*2); dstCtx.fill();
+    dstCtx.drawImage(off, cx - drawSize/2, cy - drawSize/2 - 8*scale, drawSize, drawSize);
+    dstCtx.restore();
+    return true;
+  }
+  function has(species) {
+    const e = REG[species]; return !!(e && e.ready);
+  }
+  // Wire up when Three arrives
+  function boot() {
+    if (window.__THREE) { init(window.__THREE); loadAll(); }
+    else window.addEventListener("three-ready", () => { init(window.__THREE); loadAll(); }, { once: true });
+  }
+  boot();
+  return { render, has };
+})();
+
+// ==============================================================
+// Audio — WebAudio synth. All sound generated procedurally.
+// ==============================================================
+const Audio = (() => {
+  let ac = null, master = null, musicGain = null, sfxGain = null;
+  let musicOn = true, muted = false;
+  let musicNodes = [];
+  function ensure() {
+    if (ac) return;
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = 0.7; master.connect(ac.destination);
+      musicGain = ac.createGain(); musicGain.gain.value = 0.18; musicGain.connect(master);
+      sfxGain   = ac.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
+    } catch(e) { ac = null; }
+  }
+  function resume() { if (ac && ac.state === "suspended") ac.resume(); }
+  function setMuted(v) {
+    muted = v;
+    if (master) master.gain.value = v ? 0 : 0.7;
+  }
+  function toggleMute() { setMuted(!muted); return muted; }
+  // ---- SFX primitives ----
+  function tone({freq=440, dur=0.15, type="square", vol=0.4, slide=null, attack=0.005, decay=null}) {
+    if (!ac || muted) return;
+    const t = ac.currentTime;
+    const o = ac.createOscillator(); o.type = type;
+    const g = ac.createGain();
+    o.frequency.setValueAtTime(freq, t);
+    if (slide != null) o.frequency.exponentialRampToValueAtTime(Math.max(1, slide), t + dur);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(sfxGain);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise({dur=0.2, vol=0.3, filterFreq=2000, filterQ=1, filterSlide=null}) {
+    if (!ac || muted) return;
+    const t = ac.currentTime;
+    const bufSize = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random()*2 - 1;
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const filt = ac.createBiquadFilter(); filt.type = "bandpass";
+    filt.frequency.setValueAtTime(filterFreq, t); filt.Q.value = filterQ;
+    if (filterSlide != null) filt.frequency.exponentialRampToValueAtTime(Math.max(50, filterSlide), t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(filt).connect(g).connect(sfxGain);
+    src.start(t); src.stop(t + dur);
+  }
+  // ---- Named SFX ----
+  const SFX = {
+    step()       { tone({freq:220, dur:0.05, type:"triangle", vol:0.15}); },
+    menu()       { tone({freq:660, dur:0.05, type:"square",   vol:0.25}); },
+    select()     { tone({freq:880, dur:0.08, type:"square",   vol:0.3});
+                   tone({freq:1320,dur:0.08, type:"square",   vol:0.2}); },
+    back()       { tone({freq:440, dur:0.06, type:"square",   vol:0.2, slide:220}); },
+    encounter()  {
+      tone({freq:200, dur:0.15, type:"sawtooth", vol:0.35, slide:800});
+      setTimeout(()=>tone({freq:400, dur:0.2, type:"square", vol:0.35, slide:1600}), 120);
+    },
+    hit(eff)     {
+      noise({dur:0.18, vol:0.25 + Math.min(0.25, eff*0.1), filterFreq:1200, filterSlide:200});
+      tone({freq: eff>1.5 ? 180 : 300, dur:0.12, type:"square", vol:0.3, slide: eff>1.5? 90 : 200});
+    },
+    faint()      {
+      tone({freq:600, dur:0.5, type:"sawtooth", vol:0.4, slide:80});
+    },
+    catchThrow() {
+      tone({freq:300, dur:0.15, type:"triangle", vol:0.3, slide:900});
+    },
+    catchShake() {
+      tone({freq:520, dur:0.08, type:"square", vol:0.3});
+      tone({freq:660, dur:0.08, type:"square", vol:0.2});
+    },
+    catchWin() {
+      const notes = [523, 659, 784, 1047];
+      notes.forEach((f, i) => setTimeout(()=>tone({freq:f,dur:0.15,type:"square",vol:0.35}), i*90));
+    },
+    catchFail() {
+      tone({freq:400, dur:0.3, type:"sawtooth", vol:0.35, slide:120});
+    },
+    win() {
+      const notes = [523, 659, 784, 1047, 1319];
+      notes.forEach((f, i) => setTimeout(()=>tone({freq:f,dur:0.25,type:"triangle",vol:0.4}), i*140));
+    },
+    // Per-type move signatures
+    fire() {
+      noise({dur:0.45, vol:0.35, filterFreq:800, filterSlide:2400, filterQ:2});
+      tone({freq:140, dur:0.4, type:"sawtooth", vol:0.25, slide:60});
+    },
+    electric() {
+      for (let i=0;i<5;i++) setTimeout(()=>tone({freq:1200+Math.random()*800, dur:0.05, type:"square", vol:0.3}), i*35);
+      tone({freq:80, dur:0.3, type:"square", vol:0.2, slide:40});
+    },
+    grass() {
+      tone({freq:120, dur:0.25, type:"triangle", vol:0.35, slide:70});
+      noise({dur:0.35, vol:0.2, filterFreq:3000, filterSlide:600, filterQ:1});
+    },
+    water() {
+      noise({dur:0.5, vol:0.3, filterFreq:400, filterSlide:2000, filterQ:1});
+      tone({freq:220, dur:0.3, type:"sine", vol:0.25, slide:660});
+    },
+    normal() {
+      tone({freq:200, dur:0.12, type:"square", vol:0.3, slide:120});
+    },
+  };
+  // ---- Music: simple looping arpeggio, low-key so it doesn't fight SFX ----
+  function startMusic(mood) {
+    if (!ac || !musicOn) return;
+    stopMusic();
+    const patterns = {
+      town:   { root: 261.63, prog: [0, 4, 7, 4], tempo: 0.42, wave: "triangle" },
+      battle: { root: 220.00, prog: [0, 3, 5, 7], tempo: 0.28, wave: "square" },
+      title:  { root: 329.63, prog: [0, 4, 7, 12], tempo: 0.5, wave: "triangle" },
+      win:    { root: 523.25, prog: [0, 4, 7, 12], tempo: 0.35, wave: "triangle" },
+    };
+    const p = patterns[mood] || patterns.town;
+    const startAt = ac.currentTime + 0.05;
+    // repeat pattern for 4 bars, then schedule loop
+    let step = 0;
+    const noteLen = p.tempo;
+    const totalSteps = 32;
+    for (let i = 0; i < totalSteps; i++) {
+      const semis = p.prog[i % p.prog.length];
+      const freq = p.root * Math.pow(2, semis/12);
+      const t = startAt + i * noteLen;
+      const o = ac.createOscillator(); o.type = p.wave;
+      const g = ac.createGain();
+      o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.6, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + noteLen*0.9);
+      o.connect(g).connect(musicGain);
+      o.start(t); o.stop(t + noteLen);
+      musicNodes.push(o);
+      // bass every 4 steps
+      if (i % 4 === 0) {
+        const bo = ac.createOscillator(); bo.type = "triangle";
+        const bg = ac.createGain();
+        bo.frequency.setValueAtTime(p.root/2, t);
+        bg.gain.setValueAtTime(0, t);
+        bg.gain.linearRampToValueAtTime(0.7, t + 0.02);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + noteLen*3.5);
+        bo.connect(bg).connect(musicGain);
+        bo.start(t); bo.stop(t + noteLen*4);
+        musicNodes.push(bo);
+      }
+    }
+    // Schedule next loop
+    const total = totalSteps * noteLen;
+    musicNodes.loopTimer = setTimeout(() => startMusic(mood), total * 1000 - 100);
+  }
+  function stopMusic() {
+    if (musicNodes.loopTimer) clearTimeout(musicNodes.loopTimer);
+    musicNodes.forEach(n => { try { n.stop(); } catch(e){} });
+    musicNodes = [];
+  }
+  return { ensure, resume, setMuted, toggleMute, SFX, startMusic, stopMusic,
+           get isMuted() { return muted; } };
+})();
+
+// Mute button
+const muteBtn = document.getElementById("muteBtn");
+muteBtn.addEventListener("click", () => {
+  Audio.ensure(); Audio.resume();
+  const m = Audio.toggleMute();
+  muteBtn.textContent = "SOUND: " + (m ? "OFF" : "ON");
+});
+
+// ==============================================================
+// Input
+// ==============================================================
+const keys = { up:false, down:false, left:false, right:false, a:false, b:false };
+const pressed = { up:false, down:false, left:false, right:false, a:false, b:false };
+function setKey(k, v) {
+  if (!(k in keys)) return;
+  if (v && !keys[k]) pressed[k] = true;
+  keys[k] = v;
+  if (v) { Audio.ensure(); Audio.resume(); ensureMusic(); }
+}
+const KEYMAP = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right",
+                 w:"up", s:"down", a:"left", d:"right", W:"up", S:"down", A:"left", D:"right",
+                 " ":"a", Enter:"a", z:"a", Z:"a", x:"b", X:"b", Escape:"b" };
+window.addEventListener("keydown", e => { const k = KEYMAP[e.key]; if (k) { setKey(k, true); e.preventDefault(); } });
+window.addEventListener("keyup",   e => { const k = KEYMAP[e.key]; if (k) { setKey(k, false); e.preventDefault(); } });
+document.querySelectorAll("[data-k]").forEach(btn => {
+  const k = btn.dataset.k;
+  const on = e => { e.preventDefault(); setKey(k, true); };
+  const off = e => { e.preventDefault(); setKey(k, false); };
+  btn.addEventListener("touchstart", on, {passive:false});
+  btn.addEventListener("touchend", off); btn.addEventListener("touchcancel", off);
+  btn.addEventListener("mousedown", on); btn.addEventListener("mouseup", off);
+  btn.addEventListener("mouseleave", off);
+});
+
+// ==============================================================
+// Game data
+// ==============================================================
+const EFF = {
+  fire:     { grass:2.0, water:0.5, fire:0.5, electric:1.0, normal:1.0 },
+  water:    { fire:2.0, grass:0.5, water:0.5, electric:1.0, normal:1.0 },
+  grass:    { water:2.0, fire:0.5, grass:0.5, electric:1.0, normal:1.0 },
+  electric: { water:2.0, grass:1.0, fire:1.0, electric:0.5, normal:1.0 },
+  normal:   { water:1.0, grass:1.0, fire:1.0, electric:1.0, normal:1.0 },
+};
+const MOVES = {
+  HotDiggityDoggyDog: { type:"fire",     power:14, name:"HotDiggityDoggyDog" },
+  ThunderWay:         { type:"electric", power:14, name:"ThunderWay" },
+  TreeStomp:          { type:"grass",    power:14, name:"Tree Stomp" },
+  SharkWave:          { type:"water",    power:14, name:"Shark Wave" },
+  Tackle:             { type:"normal",   power:8,  name:"Tackle" },
+};
+
+// Four species — each a DIFFERENT creature shape.
+// CrimsonFungus=dragon whelp, Bolttoad=lightning bird, Vinehop=sprout turtle, Tidefrog=ink squid.
+const SPECIES = {
+  CrimsonFungus: { type:"fire",     color:"#e85a2a", accent:"#ffd05a", maxHP:34, moves:["HotDiggityDoggyDog","Tackle"], shape:"dragon" },
+  Bolttoad:  { type:"electric", color:"#f2c744", accent:"#fff2a8", maxHP:32, moves:["ThunderWay","Tackle"],         shape:"bird" },
+  Vinehop:   { type:"grass",    color:"#4fbf5a", accent:"#c4f770", maxHP:36, moves:["TreeStomp","Tackle"],          shape:"turtle" },
+  Tidefrog:  { type:"water",    color:"#3a9be0", accent:"#c9f0ff", maxHP:36, moves:["SharkWave","Tackle"],          shape:"squid" },
+};
+const ALL_SPECIES = Object.keys(SPECIES);
+
+// Turn an internal species key like "CrimsonFungus" into a display name
+// with spaces inserted before capital letters ("Crimson Fungus"). Single-word
+// keys like "Bolttoad" pass through unchanged.
+function displayName(sp) { return sp.replace(/([a-z])([A-Z])/g, "$1 $2"); }
+
+function makeMon(species) {
+  const s = SPECIES[species];
+  return { species, type: s.type, maxHP: s.maxHP, hp: s.maxHP, moves: s.moves.slice() };
+}
+function damage(attacker, defender, moveKey, rng) {
+  const m = MOVES[moveKey];
+  const eff = (EFF[m.type] && EFF[m.type][defender.type]) || 1.0;
+  const roll = 0.85 + rng() * 0.30;
+  const stab = attacker.type === m.type ? 1.5 : 1.0;
+  const dmg = Math.max(1, Math.floor(m.power * eff * stab * roll));
+  return { dmg, eff };
+}
+
+// ==============================================================
+// Map
+// ==============================================================
+const TILE = 24;
+const MAP_W = 15, MAP_H = 22;
+// L = professor's house roof (top-left, replaces R so it renders in a different colour).
+// D = professor's door tile — stepping on it triggers the starter-select scene.
+const MAP = [
+  "FFFFFFFFFFFFFFF","F.....PPP.....F","F.LLL.P.P.RRR.F","F.HHH.P.P.HHH.F",
+  "F.HHH.P.P.HHH.F","F..D..P.P.....F","F.TTT.P.P.TTT.F","F.TTT.P.P.TTT.F",
+  "F.....P.P.....F","F.PPPPPPPPPPP.F","F.P.........P.F","F.P.TTTTTTT.P.F",
+  "F.P.TTTTTTT.P.F","F.P.TTTTTTT.P.F","F.P.........P.F","F.PPPPPPPPPPP.F",
+  "F.....P.P.....F","F.RRR.P.P.RRR.F","F.HHH.P.P.HHH.F","F.HHH.P.P.HHH.F",
+  "F.....PPP.....F","FFFFFFFFFFFFFFF",
+];
+function tileAt(x, y) {
+  if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return "F";
+  return MAP[y][x];
+}
+function walkable(t) { return t === "." || t === "P" || t === "T" || t === "D"; }
+
+// ==============================================================
+// State
+// ==============================================================
+const STATE = { TITLE:"title", CHOOSE:"choose", OVERWORLD:"overworld", BATTLE:"battle", COLLECTION:"collection", WIN:"win", PROFESSOR:"professor" };
+// Starter options — one of each of the three requested types.
+const STARTERS = ["CrimsonFungus","Vinehop","Tidefrog"];
+const game = {
+  state: STATE.TITLE, prevMusicMood: null,
+  playerSprite: "boy",
+  player: { x: 7, y: 10, dir: "down", moving: false, from:null, to:null, t:0 },
+  party: [], caught: new Set(),
+  hasStarter: false,
+  starterCursor: 1, // default to grass (middle)
+  encounterCooldown: 0,
+  battle: null, msg: null, vfx: null, frame: 0,
+};
+const rng = Math.random;
+
+// Music per state
+function ensureMusic() {
+  const moodMap = { title:"title", choose:"title", overworld:"town", battle:"battle", collection:"town", win:"win", professor:"title" };
+  const mood = moodMap[game.state];
+  if (mood !== game.prevMusicMood) {
+    Audio.startMusic(mood);
+    game.prevMusicMood = mood;
+  }
+}
+
+// ==============================================================
+// Draw primitives
+// ==============================================================
+function clear(color) { ctx.fillStyle = color; ctx.fillRect(0,0,W,H); }
+function rect(x,y,w,h,c) { ctx.fillStyle = c; ctx.fillRect(x,y,w,h); }
+function stroke(x,y,w,h,c,lw=1) { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1); }
+function text(str, x, y, size=12, color="#fff", align="left") {
+  ctx.fillStyle = color; ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = "top"; ctx.fillText(str, x, y);
+}
+
+// ==============================================================
+// Tiles / houses
+// ==============================================================
+function drawHouse(px, py) {
+  rect(px, py, TILE*3, TILE*2, "#d9c39a");
+  rect(px+2, py+2, TILE*3-4, 3, "#8a6a3a");
+  rect(px+2, py+TILE-1, TILE*3-4, 2, "#8a6a3a");
+  rect(px+TILE+6, py+TILE*2-16, 12, 16, "#6b3f1f");
+  rect(px+4, py+TILE-4, 10, 10, "#87cefa");
+  rect(px+TILE*3-14, py+TILE-4, 10, 10, "#87cefa");
+}
+function drawRoof(px, py, palette="red") {
+  const main = palette === "prof" ? "#5aa04a" : "#c0392b";
+  const trim = palette === "prof" ? "#3a6f30" : "#8b2a1c";
+  ctx.fillStyle = main;
+  ctx.beginPath();
+  ctx.moveTo(px-2, py+TILE); ctx.lineTo(px+TILE*1.5, py+2); ctx.lineTo(px+TILE*3+2, py+TILE);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = trim; ctx.fillRect(px-2, py+TILE-3, TILE*3+4, 3);
+  if (palette === "prof") {
+    // Little chimney with steam puff to signal "lab"
+    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(px+TILE*2, py+4, 6, 10);
+    ctx.fillStyle = "#e8f0ff";
+    ctx.beginPath(); ctx.arc(px+TILE*2+3, py+2, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px+TILE*2+8, py-3, 3, 0, Math.PI*2); ctx.fill();
+  }
+}
+function drawTile(tx, ty) {
+  const t = MAP[ty][tx];
+  const x = tx*TILE, y = ty*TILE;
+  if (t === "." || t === "P" || t === "T" || t === "H" || t === "R" || t === "L" || t === "D") {
+    rect(x,y,TILE,TILE, (tx+ty)%2===0 ? "#5cbf5a" : "#54b354");
+  }
+  if (t === "P") { rect(x,y,TILE,TILE, "#d7c184"); rect(x+8, y+10, 8, 4, "#c4ac6a"); }
+  if (t === "D") {
+    // Doormat + welcome sign for the professor's lab
+    rect(x,y,TILE,TILE, "#d7c184");
+    rect(x+3, y+8, TILE-6, TILE-12, "#8b3a2c");
+    rect(x+5, y+10, TILE-10, TILE-16, "#c04a3a");
+    // small "LAB" plaque
+    ctx.fillStyle = "#f0e8b0"; ctx.fillRect(x+6, y+2, TILE-12, 5);
+    ctx.fillStyle = "#3a2010"; ctx.font = "700 5px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.fillText("LAB", x+TILE/2, y+2.5);
+  }
+  if (t === "T") {
+    rect(x,y,TILE,TILE, "#2f8a3f");
+    for (let i=0;i<4;i++){
+      const bx = x + 3 + (i%2)*10, by = y + 4 + Math.floor(i/2)*10;
+      rect(bx, by, 3, 8, "#1c5f2a"); rect(bx+4, by+2, 3, 6, "#1c5f2a");
+    }
+  }
+  if (t === "F") {
+    rect(x,y,TILE,TILE, "#7fbf7d");
+    rect(x, y+8, TILE, 3, "#5a3a1a"); rect(x, y+16, TILE, 3, "#5a3a1a");
+    rect(x+4, y+2, 3, TILE-4, "#7a4e26"); rect(x+TILE-7, y+2, 3, TILE-4, "#7a4e26");
+  }
+}
+function drawMap() {
+  clear("#3a7d4a");
+  for (let y=0;y<MAP_H;y++) for (let x=0;x<MAP_W;x++) drawTile(x,y);
+  for (let y=0;y<MAP_H;y++) for (let x=0;x<MAP_W;x++) {
+    if (MAP[y][x] === "H" && (x===0 || MAP[y][x-1] !== "H") && (y===0 || MAP[y-1][x] !== "H"))
+      drawHouse(x*TILE, y*TILE);
+    if (MAP[y][x] === "R" && (x===0 || MAP[y][x-1] !== "R"))
+      drawRoof(x*TILE, y*TILE, "red");
+    if (MAP[y][x] === "L" && (x===0 || MAP[y][x-1] !== "L"))
+      drawRoof(x*TILE, y*TILE, "prof");
+  }
+}
+function drawPlayer() {
+  const p = game.player;
+  let px, py;
+  if (p.moving) {
+    const t = p.t;
+    px = (p.from.x + (p.to.x - p.from.x) * t) * TILE;
+    py = (p.from.y + (p.to.y - p.from.y) * t) * TILE;
+  } else { px = p.x * TILE; py = p.y * TILE; }
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-2, 8, 3, 0, 0, Math.PI*2); ctx.fill();
+  const shirt = game.playerSprite === "boy" ? "#4a7fd6" : "#e05aa8";
+  const hair  = game.playerSprite === "boy" ? "#4a2a10" : "#c48a1a";
+  rect(px+7, py+10, 10, 9, shirt);
+  rect(px+7, py+18, 4, 5, "#2a3a6a"); rect(px+13, py+18, 4, 5, "#2a3a6a");
+  rect(px+8, py+3, 8, 8, "#f2c9a0");
+  rect(px+8, py+2, 8, 3, hair);
+  if (game.playerSprite === "girl") { rect(px+7, py+5, 1, 5, hair); rect(px+16, py+5, 1, 5, hair); }
+  const eyeY = py+6;
+  if (p.dir === "down")  { rect(px+10, eyeY, 1, 2, "#000"); rect(px+13, eyeY, 1, 2, "#000"); }
+  if (p.dir === "up")    { rect(px+9, py+2, 6, 1, hair); }
+  if (p.dir === "left")  { rect(px+10, eyeY, 1, 2, "#000"); }
+  if (p.dir === "right") { rect(px+13, eyeY, 1, 2, "#000"); }
+}
+
+// ==============================================================
+// Creature drawing — one function per species (varied shapes)
+// ==============================================================
+function shadow(cx, cy, w, h) {
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath(); ctx.ellipse(cx, cy, w, h, 0, 0, Math.PI*2); ctx.fill();
+}
+function pupil(cx, cy, r, fill="#fff", eye="#111") {
+  ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = eye;  ctx.beginPath(); ctx.arc(cx, cy, r*0.5, 0, Math.PI*2); ctx.fill();
+}
+function polyFill(pts, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath(); ctx.fill();
+}
+
+// CrimsonFungus — fire dragon whelp
+function drawCrimsonFungus(cx, cy, S, facing) {
+  shadow(cx, cy+22*S, 22*S, 5*S);
+  const f = facing;
+  // tail
+  polyFill([[cx-18*S*f, cy+8*S], [cx-26*S*f, cy-2*S], [cx-30*S*f, cy+10*S]], "#c94a1e");
+  // body (rounded diamond)
+  polyFill([[cx, cy-14*S],[cx+18*S, cy+2*S],[cx+12*S, cy+20*S],[cx-12*S, cy+20*S],[cx-18*S, cy+2*S]], "#e85a2a");
+  // belly (yellow flame belly)
+  polyFill([[cx, cy-2*S],[cx+10*S, cy+8*S],[cx+6*S, cy+18*S],[cx-6*S, cy+18*S],[cx-10*S, cy+8*S]], "#ffd05a");
+  // wings
+  polyFill([[cx-6*S, cy-10*S],[cx-18*S, cy-18*S],[cx-10*S, cy-4*S]], "#c94a1e");
+  polyFill([[cx+6*S, cy-10*S],[cx+18*S, cy-18*S],[cx+10*S, cy-4*S]], "#c94a1e");
+  // horns
+  polyFill([[cx-6*S, cy-14*S],[cx-9*S, cy-22*S],[cx-3*S, cy-15*S]], "#8a2f10");
+  polyFill([[cx+6*S, cy-14*S],[cx+9*S, cy-22*S],[cx+3*S, cy-15*S]], "#8a2f10");
+  // head
+  ctx.fillStyle = "#e85a2a";
+  ctx.beginPath(); ctx.arc(cx, cy-6*S, 10*S, 0, Math.PI*2); ctx.fill();
+  // snout
+  polyFill([[cx+2*S*f, cy-6*S],[cx+14*S*f, cy-4*S],[cx+10*S*f, cy+2*S],[cx+2*S*f, cy+1*S]], "#c94a1e");
+  // eyes
+  pupil(cx-4*S, cy-8*S, 3*S);
+  pupil(cx+4*S, cy-8*S, 3*S);
+}
+
+// Bolttoad — electric lightning bird
+function drawBolttoad(cx, cy, S, facing) {
+  shadow(cx, cy+22*S, 22*S, 5*S);
+  const f = facing;
+  // tail feathers
+  polyFill([[cx-14*S*f, cy+4*S],[cx-26*S*f, cy-6*S],[cx-22*S*f, cy+10*S]], "#8dd0ff");
+  polyFill([[cx-14*S*f, cy+8*S],[cx-24*S*f, cy+4*S],[cx-20*S*f, cy+16*S]], "#f2c744");
+  // body (egg)
+  ctx.fillStyle = "#f2c744";
+  ctx.beginPath(); ctx.ellipse(cx, cy+4*S, 15*S, 18*S, 0, 0, Math.PI*2); ctx.fill();
+  // belly stripe
+  ctx.fillStyle = "#fff2a8";
+  ctx.beginPath(); ctx.ellipse(cx, cy+10*S, 8*S, 10*S, 0, 0, Math.PI*2); ctx.fill();
+  // lightning-bolt wings
+  polyFill([[cx-15*S, cy-2*S],[cx-24*S, cy+4*S],[cx-18*S, cy+6*S],[cx-24*S, cy+14*S],[cx-14*S, cy+8*S]], "#8dd0ff");
+  polyFill([[cx+15*S, cy-2*S],[cx+24*S, cy+4*S],[cx+18*S, cy+6*S],[cx+24*S, cy+14*S],[cx+14*S, cy+8*S]], "#8dd0ff");
+  // head
+  ctx.fillStyle = "#f2c744";
+  ctx.beginPath(); ctx.arc(cx, cy-10*S, 10*S, 0, Math.PI*2); ctx.fill();
+  // lightning-bolt crest
+  polyFill([[cx-4*S, cy-18*S],[cx+2*S, cy-28*S],[cx-1*S, cy-22*S],[cx+5*S, cy-30*S],[cx+3*S, cy-22*S],[cx+7*S, cy-16*S]], "#fff2a8");
+  // beak
+  polyFill([[cx+2*S*f, cy-10*S],[cx+12*S*f, cy-8*S],[cx+2*S*f, cy-4*S]], "#e08a20");
+  // eyes
+  pupil(cx-4*S, cy-12*S, 3*S);
+  pupil(cx+4*S, cy-12*S, 3*S);
+  // feet
+  polyFill([[cx-6*S, cy+20*S],[cx-9*S, cy+24*S],[cx-3*S, cy+24*S]], "#e08a20");
+  polyFill([[cx+6*S, cy+20*S],[cx+9*S, cy+24*S],[cx+3*S, cy+24*S]], "#e08a20");
+}
+
+// Vinehop — grass sprout turtle
+function drawVinehop(cx, cy, S, facing) {
+  shadow(cx, cy+22*S, 24*S, 5*S);
+  const f = facing;
+  // shell (dome)
+  ctx.fillStyle = "#3d8f42";
+  ctx.beginPath(); ctx.ellipse(cx, cy+2*S, 22*S, 16*S, 0, Math.PI, 0); ctx.fill();
+  // shell plates
+  ctx.fillStyle = "#4fbf5a";
+  for (let i=-2;i<=2;i++){
+    polyFill([[cx+i*7*S, cy-13*S],[cx+(i+1)*7*S, cy-13*S],[cx+(i+1)*7*S-1, cy+1*S],[cx+i*7*S+1, cy+1*S]], i%2? "#4fbf5a":"#66d070");
+  }
+  // sprout on top
+  polyFill([[cx, cy-14*S],[cx-6*S, cy-22*S],[cx+2*S, cy-18*S]], "#c4f770");
+  polyFill([[cx, cy-14*S],[cx+8*S, cy-24*S],[cx+2*S, cy-18*S]], "#c4f770");
+  // belly
+  ctx.fillStyle = "#f6dfa0";
+  ctx.beginPath(); ctx.ellipse(cx, cy+8*S, 18*S, 10*S, 0, 0, Math.PI*2); ctx.fill();
+  // legs
+  ctx.fillStyle = "#4fbf5a";
+  ctx.beginPath(); ctx.arc(cx-14*S, cy+14*S, 6*S, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+14*S, cy+14*S, 6*S, 0, Math.PI*2); ctx.fill();
+  // head
+  ctx.fillStyle = "#4fbf5a";
+  ctx.beginPath(); ctx.arc(cx+14*S*f, cy+2*S, 9*S, 0, Math.PI*2); ctx.fill();
+  // eye
+  pupil(cx+16*S*f, cy, 2.5*S);
+  // smile
+  ctx.strokeStyle = "#1a3a1a"; ctx.lineWidth = 1.5*S;
+  ctx.beginPath(); ctx.arc(cx+16*S*f, cy+4*S, 3*S, 0, Math.PI); ctx.stroke();
+}
+
+// Tidefrog — water ink squid
+function drawTidefrog(cx, cy, S, facing) {
+  shadow(cx, cy+22*S, 22*S, 5*S);
+  // mantle (dome)
+  ctx.fillStyle = "#3a9be0";
+  ctx.beginPath(); ctx.ellipse(cx, cy-2*S, 18*S, 20*S, 0, Math.PI, 0); ctx.fill();
+  // mantle spots
+  ctx.fillStyle = "#c9f0ff";
+  ctx.beginPath(); ctx.arc(cx-6*S, cy-8*S, 2*S, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+6*S, cy-12*S, 2*S, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+1*S, cy-16*S, 2*S, 0, Math.PI*2); ctx.fill();
+  // fins on top
+  polyFill([[cx-14*S, cy-14*S],[cx-22*S, cy-20*S],[cx-10*S, cy-8*S]], "#2a7bb0");
+  polyFill([[cx+14*S, cy-14*S],[cx+22*S, cy-20*S],[cx+10*S, cy-8*S]], "#2a7bb0");
+  // tentacles (5 wavy)
+  for (let i=-2;i<=2;i++){
+    const bx = cx + i*6*S;
+    ctx.strokeStyle = "#3a9be0"; ctx.lineWidth = 4*S; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(bx, cy+8*S);
+    ctx.quadraticCurveTo(bx + Math.sin(i)*5*S, cy+14*S, bx + i*2*S, cy+22*S);
+    ctx.stroke();
+  }
+  // face
+  pupil(cx-5*S, cy-4*S, 3.5*S);
+  pupil(cx+5*S, cy-4*S, 3.5*S);
+  // small mouth
+  ctx.fillStyle = "#1a3a5a"; ctx.beginPath(); ctx.arc(cx, cy+2*S, 2*S, 0, Math.PI); ctx.fill();
+}
+
+function drawMon(m, cx, cy, scale=1, facing=1) {
+  // Prefer real 3D model when this species has a .glb loaded
+  const t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
+  if (Mon3D.has(m.species) && Mon3D.render(m.species, ctx, cx, cy, scale, facing, t)) return;
+  // Fallback: hand-drawn polygon art
+  const sh = SPECIES[m.species].shape;
+  if (sh === "dragon") return drawCrimsonFungus(cx, cy, scale, facing);
+  if (sh === "bird")   return drawBolttoad(cx, cy, scale, facing);
+  if (sh === "turtle") return drawVinehop(cx, cy, scale, facing);
+  if (sh === "squid")  return drawTidefrog(cx, cy, scale, facing);
+}
+
+// ==============================================================
+// VFX — per-type move animation
+// ==============================================================
+// vfx = { type, elapsed, dur, atX, atY, phase:"windup"|"impact", onImpact, onEnd, particles }
+function startVfx(type, atX, atY, onImpact, onEnd) {
+  game.vfx = {
+    type, elapsed: 0, dur: 900, atX, atY,
+    windupUntil: 350, impactUntil: 750,
+    firedImpact: false,
+    onImpact, onEnd, particles: []
+  };
+  // Play SFX at windup
+  const sfx = Audio.SFX[type] || Audio.SFX.normal;
+  sfx();
+}
+function updateVfx(dt) {
+  const v = game.vfx; if (!v) return;
+  v.elapsed += dt;
+  // spawn particles
+  if (v.type === "fire" && v.elapsed < v.impactUntil) {
+    for (let i=0;i<3;i++) v.particles.push({x:v.atX+(Math.random()-0.5)*40, y:v.atY+20, vx:(Math.random()-0.5)*1, vy:-1-Math.random()*2, life:1, color:"#ffcf3a"});
+  }
+  if (v.type === "electric" && v.elapsed < v.impactUntil) {
+    for (let i=0;i<2;i++) v.particles.push({x:v.atX+(Math.random()-0.5)*30, y:v.atY+(Math.random()-0.5)*30, vx:0, vy:0, life:0.6, color:"#fff2a8", star:true});
+  }
+  if (v.type === "grass" && v.elapsed < v.impactUntil) {
+    for (let i=0;i<2;i++) v.particles.push({x:v.atX+(Math.random()-0.5)*40, y:v.atY-20, vx:(Math.random()-0.5)*2, vy:Math.random()*1.5+0.5, life:1, color:"#4bd07a", leaf:true});
+  }
+  if (v.type === "water" && v.elapsed < v.impactUntil) {
+    for (let i=0;i<3;i++) v.particles.push({x:v.atX+(Math.random()-0.5)*40, y:v.atY+(Math.random()-0.5)*30, vx:(Math.random()-0.5)*2, vy:(Math.random()-0.5)*1, life:0.8, color:"#c9f0ff"});
+  }
+  if (v.type === "normal" && v.elapsed < 300) {
+    for (let i=0;i<1;i++) v.particles.push({x:v.atX+(Math.random()-0.5)*20, y:v.atY+(Math.random()-0.5)*20, vx:0, vy:0, life:0.4, color:"#fff"});
+  }
+  v.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= dt/600; });
+  v.particles = v.particles.filter(p => p.life > 0);
+  // impact hook
+  if (!v.firedImpact && v.elapsed >= v.windupUntil) {
+    v.firedImpact = true;
+    if (v.onImpact) v.onImpact();
+  }
+  if (v.elapsed >= v.dur) {
+    const fn = v.onEnd;
+    game.vfx = null;
+    if (fn) fn();
+  }
+}
+function drawVfxOverlay() {
+  const v = game.vfx; if (!v) return;
+  // Full-screen tint at impact
+  if (v.firedImpact && v.elapsed < v.impactUntil) {
+    const tintMap = { fire:"rgba(255,120,20,0.25)", electric:"rgba(255,240,120,0.35)",
+                      grass:"rgba(90,220,110,0.22)", water:"rgba(120,200,255,0.28)", normal:"rgba(255,255,255,0.18)" };
+    rect(0,0,W,H, tintMap[v.type] || "rgba(255,255,255,0.1)");
+    // Screen shake handled by draw wrapper elsewhere; here draw a bright ring at impact center
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = v.type === "electric" ? "#fff" : "#ffcf3a";
+    ctx.lineWidth = 4;
+    const r = 20 + (v.elapsed - v.windupUntil) * 0.2;
+    ctx.beginPath(); ctx.arc(v.atX, v.atY, r, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+  // Type-specific windup effects
+  if (v.type === "electric" && v.elapsed < v.impactUntil) {
+    // Zig-zag bolts from player toward target
+    ctx.save();
+    ctx.strokeStyle = "#fff2a8"; ctx.lineWidth = 3;
+    for (let b=0;b<3;b++){
+      ctx.beginPath();
+      let x = 90, y = 340; // player mon
+      ctx.moveTo(x, y);
+      const tx = v.atX, ty = v.atY;
+      for (let i=1;i<=6;i++){
+        const t = i/6;
+        const px = x + (tx-x)*t + (Math.random()-0.5)*18;
+        const py = y + (ty-y)*t + (Math.random()-0.5)*18;
+        ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if (v.type === "fire" && v.elapsed < v.impactUntil) {
+    // Fireball travelling
+    const t = Math.min(1, v.elapsed / v.windupUntil);
+    const sx = 90, sy = 340;
+    const bx = sx + (v.atX-sx)*t, by = sy + (v.atY-sy)*t;
+    ctx.fillStyle = "#ffcf3a";
+    ctx.beginPath(); ctx.arc(bx, by, 12, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#e85a2a";
+    ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI*2); ctx.fill();
+  }
+  if (v.type === "water" && v.elapsed < v.impactUntil) {
+    // Wave crest sweeping across
+    const t = Math.min(1, v.elapsed / v.windupUntil);
+    const wx = 90 + (v.atX-90)*t;
+    ctx.strokeStyle = "#c9f0ff"; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i=0;i<60;i++){
+      const px = wx - 30 + i;
+      const py = v.atY + Math.sin(i*0.4 + v.elapsed*0.02)*8;
+      if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  if (v.type === "grass" && v.elapsed < v.impactUntil) {
+    // Roots/vines curling up at target
+    ctx.strokeStyle = "#4bd07a"; ctx.lineWidth = 4; ctx.lineCap = "round";
+    for (let i=-2;i<=2;i++){
+      ctx.beginPath();
+      const bx = v.atX + i*8;
+      ctx.moveTo(bx, v.atY + 30);
+      const swing = Math.sin(v.elapsed*0.02 + i)*4;
+      ctx.quadraticCurveTo(bx+swing, v.atY+10, bx + i*3, v.atY - 10 + i*i);
+      ctx.stroke();
+    }
+  }
+  // Draw particles
+  v.particles.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.life);
+    if (p.star) {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      for (let i=0;i<8;i++){
+        const a = i*Math.PI/4;
+        const r = i%2? 2 : 6;
+        const px = p.x + Math.cos(a)*r, py = p.y + Math.sin(a)*r;
+        if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+    } else if (p.leaf) {
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, 5, 2.5, Math.sin(p.life*10), 0, Math.PI*2); ctx.fill();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  });
+}
+// Screen shake — offset drawing during impact frames
+function shakeOffset() {
+  const v = game.vfx;
+  if (!v || !v.firedImpact || v.elapsed >= v.impactUntil) return {x:0,y:0};
+  const strength = v.type === "electric" ? 4 : v.type === "fire" ? 5 : v.type === "water" ? 3 : 3;
+  return { x: (Math.random()-0.5)*strength*2, y: (Math.random()-0.5)*strength*2 };
+}
+
+// ==============================================================
+// Overworld / battle logic
+// ==============================================================
+function tryStartMove(dx, dy, dir) {
+  const p = game.player;
+  if (p.moving) return;
+  p.dir = dir;
+  const nx = p.x + dx, ny = p.y + dy;
+  if (!walkable(tileAt(nx, ny))) return;
+  p.from = { x: p.x, y: p.y }; p.to = { x: nx, y: ny };
+  p.moving = true; p.t = 0;
+  Audio.SFX.step();
+}
+function updateOverworld() {
+  const p = game.player;
+  if (p.moving) {
+    p.t += 0.14;
+    if (p.t >= 1) {
+      p.t = 1; p.moving = false;
+      p.x = p.to.x; p.y = p.to.y;
+      const here = tileAt(p.x, p.y);
+      if (here === "D") {
+        // Enter the professor's lab
+        openProfessor();
+      } else if (here === "T" && game.hasStarter && game.encounterCooldown <= 0) {
+        if (rng() < 0.28) startEncounter();
+        else game.encounterCooldown = 3;
+      } else if (game.encounterCooldown > 0) game.encounterCooldown--;
+    }
+  } else {
+    if (keys.up)         tryStartMove(0, -1, "up");
+    else if (keys.down)  tryStartMove(0,  1, "down");
+    else if (keys.left)  tryStartMove(-1, 0, "left");
+    else if (keys.right) tryStartMove(1,  0, "right");
+    if (pressed.b) { Audio.SFX.menu(); game.state = STATE.COLLECTION; }
+  }
+}
+function startEncounter() {
+  // Encounters are gated on hasStarter in the overworld update, so party is guaranteed non-empty here.
+  Audio.SFX.encounter();
+  enterBattle();
+}
+
+// ---- Professor / starter select ----
+function openProfessor() {
+  if (game.hasStarter) {
+    showMsg([
+      `Professor Ribbit: Back so soon?`,
+      `Go on now — Fundude's CroakyMons won't catch themselves!`
+    ], null);
+    // step off the door so it doesn't retrigger
+    stepOffDoor();
+    return;
+  }
+  showMsg([
+    `Professor Ribbit: Welcome to my lab!`,
+    `I have three young CroakyMons here.`,
+    `One of them will be your very own partner!`,
+    `Choose carefully — pick the one that feels right for you.`
+  ], () => { game.state = STATE.PROFESSOR; game.starterCursor = 1; });
+}
+function stepOffDoor() {
+  // Nudge the player one tile downward off the door mat.
+  const p = game.player;
+  if (tileAt(p.x, p.y+1) && walkable(tileAt(p.x, p.y+1))) {
+    p.from = { x: p.x, y: p.y }; p.to = { x: p.x, y: p.y+1 };
+    p.moving = true; p.t = 0; p.dir = "down";
+  }
+}
+function confirmStarter() {
+  const sp = STARTERS[game.starterCursor];
+  const mon = makeMon(sp);
+  game.party.push(mon);
+  game.caught.add(sp);
+  game.hasStarter = true;
+  Audio.SFX.catchWin();
+  showMsg([
+    `Professor Ribbit: A fine choice!`,
+    `${displayName(sp)} is yours!`,
+    `Now head into the tall grass to find wild CroakyMons.`,
+    `Team Evil Soup are up to something — be careful out there!`
+  ], () => { game.state = STATE.OVERWORLD; stepOffDoor(); });
+}
+function updateProfessor() {
+  if (pressed.left)  { game.starterCursor = (game.starterCursor + STARTERS.length - 1) % STARTERS.length; Audio.SFX.menu(); }
+  if (pressed.right) { game.starterCursor = (game.starterCursor + 1) % STARTERS.length; Audio.SFX.menu(); }
+  if (pressed.a)     { Audio.SFX.select(); confirmStarter(); }
+  if (pressed.b)     { Audio.SFX.back(); game.state = STATE.OVERWORLD; stepOffDoor(); }
+}
+function drawProfessorScreen() {
+  // Interior scene — warm lab colours
+  clear("#2a1a30");
+  // floorboards
+  for (let i=0;i<10;i++) rect(0, 380+i*26, W, 2, "#4a2a20");
+  // Wall + shelf
+  rect(0, 0, W, 380, "#5a3a5a");
+  rect(20, 60, W-40, 20, "#8b5a3a"); // shelf
+  // three "poke-balls" on the shelf
+  for (let i=0;i<3;i++){
+    const bx = 60 + i*100;
+    ctx.fillStyle = "#e05a5a"; ctx.beginPath(); ctx.arc(bx, 66, 10, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#f0f0f0"; ctx.beginPath(); ctx.arc(bx, 66, 10, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(bx-10, 65, 20, 2);
+    ctx.beginPath(); ctx.arc(bx, 66, 3, 0, Math.PI*2); ctx.fill();
+  }
+  // Professor sprite (frog scientist)
+  drawProfessor(W/2, 170);
+
+  text("Professor Ribbit", W/2, 240, 14, "#ffcf3a", "center");
+  text("Choose your starter CroakyMon", W/2, 258, 11, "#c9f0ff", "center");
+
+  // Three starter cards
+  const cardW = 100, cardH = 140, gap = 8;
+  const totalW = cardW*3 + gap*2;
+  const startX = (W - totalW) / 2;
+  const cardY = 290;
+  STARTERS.forEach((sp, i) => {
+    const cx = startX + i*(cardW + gap);
+    const selected = i === game.starterCursor;
+    rect(cx, cardY, cardW, cardH, selected ? "#3a4a80" : "#1a2050");
+    stroke(cx, cardY, cardW, cardH, selected ? "#ffcf3a" : "#4be0d0", selected ? 3 : 1);
+    drawMon({species:sp}, cx + cardW/2, cardY + 55, 0.9, 1);
+    text(displayName(sp), cx + cardW/2, cardY + 96, 12, "#fff", "center");
+    const typeColors = { fire:"#e85a2a", grass:"#4bd07a", water:"#3a9be0" };
+    const t = SPECIES[sp].type;
+    rect(cx + cardW/2 - 24, cardY + 114, 48, 14, typeColors[t] || "#888");
+    text(t.toUpperCase(), cx + cardW/2, cardY + 116, 10, "#fff", "center");
+  });
+
+  // Instructions
+  rect(10, H - 90, W - 20, 80, "rgba(0,0,0,0.75)");
+  stroke(10, H - 90, W - 20, 80, "#fff", 2);
+  text("Left / Right: pick     A: choose     B: leave", W/2, H - 78, 11, "#fff", "center");
+  const sp = STARTERS[game.starterCursor];
+  const blurb = {
+    CrimsonFungus: "A blazing mushroom sprite. Burns grass with HotDiggityDoggyDog.",
+    Vinehop:   "A calm sprout turtle. Slams foes with Tree Stomp.",
+    Tidefrog:  "A splashy ink squid. Douses fire with Shark Wave.",
+  }[sp];
+  wrapText(blurb, 20, H - 58, W - 40, 14, 12, "#c9f0ff");
+}
+function drawProfessor(cx, cy) {
+  // A bigger frog-ish scientist in a lab coat
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath(); ctx.ellipse(cx, cy+42, 42, 8, 0, 0, Math.PI*2); ctx.fill();
+  // legs
+  rect(cx-16, cy+20, 12, 22, "#3a6f30");
+  rect(cx+4, cy+20, 12, 22, "#3a6f30");
+  // lab coat body
+  rect(cx-28, cy-20, 56, 55, "#f0f4ff");
+  // buttons
+  ctx.fillStyle = "#4a4a4a";
+  ctx.beginPath(); ctx.arc(cx, cy-8, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy+4, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy+16, 2, 0, Math.PI*2); ctx.fill();
+  // frog head
+  ctx.fillStyle = "#4fbf5a";
+  ctx.beginPath(); ctx.arc(cx, cy-40, 22, 0, Math.PI*2); ctx.fill();
+  // eyes bulging (big)
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(cx-10, cy-54, 8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+10, cy-54, 8, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "#111";
+  ctx.beginPath(); ctx.arc(cx-10, cy-54, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+10, cy-54, 3, 0, Math.PI*2); ctx.fill();
+  // round glasses
+  ctx.strokeStyle = "#222"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx-10, cy-54, 8, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx+10, cy-54, 8, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx-2, cy-54); ctx.lineTo(cx+2, cy-54); ctx.stroke();
+  // smile
+  ctx.beginPath(); ctx.arc(cx, cy-36, 6, 0, Math.PI); ctx.stroke();
+  // arms holding a clipboard
+  rect(cx+22, cy-10, 8, 20, "#f0f4ff");
+  rect(cx+30, cy-2, 14, 18, "#c9a06a");
+  rect(cx+32, cy, 10, 2, "#fff");
+  rect(cx+32, cy+4, 10, 2, "#fff");
+}
+function enterBattle(forceWildDifferentFrom) {
+  const remaining = ALL_SPECIES.filter(s => !game.caught.has(s));
+  let pool = remaining.length ? remaining : ALL_SPECIES;
+  if (forceWildDifferentFrom) { const f = pool.filter(s => s !== forceWildDifferentFrom); if (f.length) pool = f; }
+  const wildSp = pool[Math.floor(rng()*pool.length)];
+  const wild = makeMon(wildSp);
+  const active = game.party[0];
+  game.battle = {
+    wild, active, menu: "root", cursor: 0,
+    log: [`A wild ${displayName(wildSp)} appeared!`, `Go, ${displayName(active.species)}!`],
+    turnLock: false, ended: false, caughtThis: false, ranAway: false, catchAttempts: 0,
+  };
+  game.state = STATE.BATTLE;
+}
+const ROOT_OPTS = ["FIGHT","CATCH","RUN"];
+function updateBattle() {
+  const b = game.battle; if (!b || b.turnLock) return;
+  if (b.ended) {
+    if (pressed.a) {
+      Audio.SFX.select();
+      if (game.caught.size === ALL_SPECIES.length) { Audio.SFX.win(); game.state = STATE.WIN; }
+      else { game.state = STATE.OVERWORLD; game.encounterCooldown = 4; }
+      game.battle = null;
+    }
+    return;
+  }
+  if (b.menu === "root") {
+    if (pressed.up)   { b.cursor = (b.cursor + ROOT_OPTS.length - 1) % ROOT_OPTS.length; Audio.SFX.menu(); }
+    if (pressed.down) { b.cursor = (b.cursor + 1) % ROOT_OPTS.length; Audio.SFX.menu(); }
+    if (pressed.a) {
+      Audio.SFX.select();
+      const choice = ROOT_OPTS[b.cursor];
+      if (choice === "FIGHT") { b.menu = "fight"; b.cursor = 0; }
+      else if (choice === "CATCH") doCatch();
+      else if (choice === "RUN") { showMsg([`Got away safely!`], () => { b.ended = true; b.ranAway = true; }); }
+    }
+  } else if (b.menu === "fight") {
+    const moves = b.active.moves;
+    if (pressed.up || pressed.left)   { b.cursor = (b.cursor + moves.length - 1) % moves.length; Audio.SFX.menu(); }
+    if (pressed.down || pressed.right) { b.cursor = (b.cursor + 1) % moves.length; Audio.SFX.menu(); }
+    if (pressed.b) { Audio.SFX.back(); b.menu = "root"; b.cursor = 0; return; }
+    if (pressed.a) { Audio.SFX.select(); doFightTurn(moves[b.cursor]); }
+  }
+}
+function doFightTurn(moveKey) {
+  const b = game.battle; b.turnLock = true;
+  const m = MOVES[moveKey];
+  const r1 = damage(b.active, b.wild, moveKey, rng);
+  // Play attack VFX aimed at wild (top-right platform ~ 270,200)
+  startVfx(m.type, 270, 200,
+    () => {
+      b.wild.hp = Math.max(0, b.wild.hp - r1.dmg);
+      Audio.SFX.hit(r1.eff);
+    },
+    () => {
+      const lines = [`${displayName(b.active.species)} used ${m.name}!`, effLine(r1.eff, r1.dmg)];
+      if (b.wild.hp <= 0) {
+        lines.push(`Wild ${displayName(b.wild.species)} fainted!`, `It ran off before you could catch it.`);
+        Audio.SFX.faint();
+        showMsg(lines, () => { b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+        return;
+      }
+      // Enemy turn
+      const enemyMove = b.wild.moves[Math.floor(rng()*b.wild.moves.length)];
+      const em = MOVES[enemyMove];
+      const r2 = damage(b.wild, b.active, enemyMove, rng);
+      showMsg(lines, () => {
+        startVfx(em.type, 90, 340,
+          () => { b.active.hp = Math.max(0, b.active.hp - r2.dmg); Audio.SFX.hit(r2.eff); },
+          () => {
+            const l2 = [`Wild ${displayName(b.wild.species)} used ${em.name}!`, effLine(r2.eff, r2.dmg)];
+            if (b.active.hp <= 0) {
+              l2.push(`${displayName(b.active.species)} fainted!`, `You scurried home to recover.`);
+              Audio.SFX.faint();
+              showMsg(l2, () => { game.party.forEach(m => m.hp = m.maxHP); b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+            } else {
+              showMsg(l2, () => { b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+            }
+          }
+        );
+      });
+    }
+  );
+}
+function effLine(eff, dmg) {
+  if (eff > 1.5) return `It's super effective! (${dmg})`;
+  if (eff < 0.9) return `It's not very effective... (${dmg})`;
+  return `Hit for ${dmg}.`;
+}
+function doCatch() {
+  const b = game.battle; b.turnLock = true; b.catchAttempts++;
+  const frac = b.wild.hp / b.wild.maxHP;
+  const chance = Math.max(0.15, 0.85 - frac * 0.7);
+  const success = rng() < chance;
+  Audio.SFX.catchThrow();
+  setTimeout(()=>Audio.SFX.catchShake(), 250);
+  setTimeout(()=>Audio.SFX.catchShake(), 500);
+  const lines = [`You threw a Froggo Ball!`, `... shake ... shake ...`];
+  if (success) {
+    Audio.SFX.catchWin();
+    lines.push(`Gotcha! ${displayName(b.wild.species)} was caught!`);
+    if (!game.caught.has(b.wild.species)) {
+      game.caught.add(b.wild.species);
+      game.party.push(makeMon(b.wild.species));
+      lines.push(`A new CroakyMon joined your team!`);
+    } else lines.push(`(You already have one — you set it free.)`);
+    showMsg(lines, () => { b.ended = true; b.caughtThis = true; b.turnLock = false; });
+  } else {
+    Audio.SFX.catchFail();
+    lines.push(`Oh no! The ${displayName(b.wild.species)} broke free!`);
+    const enemyMove = b.wild.moves[Math.floor(rng()*b.wild.moves.length)];
+    const em = MOVES[enemyMove];
+    const r = damage(b.wild, b.active, enemyMove, rng);
+    showMsg(lines, () => {
+      startVfx(em.type, 90, 340,
+        () => { b.active.hp = Math.max(0, b.active.hp - r.dmg); Audio.SFX.hit(r.eff); },
+        () => {
+          const l2 = [`Wild ${displayName(b.wild.species)} used ${em.name}!`, effLine(r.eff, r.dmg)];
+          if (b.active.hp <= 0) {
+            l2.push(`${displayName(b.active.species)} fainted!`, `You scurried home to recover.`);
+            Audio.SFX.faint();
+            showMsg(l2, () => { game.party.forEach(m => m.hp = m.maxHP); b.ended = true; b.turnLock = false; });
+          } else showMsg(l2, () => { b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+        }
+      );
+    });
+  }
+}
+
+// ==============================================================
+// Message overlay
+// ==============================================================
+function showMsg(lines, then) { game.msg = { lines, i:0, then }; }
+function updateMsg() {
+  if (!game.msg) return;
+  if (pressed.a) {
+    Audio.SFX.menu();
+    game.msg.i++;
+    if (game.msg.i >= game.msg.lines.length) {
+      const fn = game.msg.then; game.msg = null; if (fn) fn();
+    }
+  }
+}
+function drawMsg() {
+  if (!game.msg) return;
+  const y = H - 130;
+  rect(10, y, W-20, 110, "rgba(0,0,0,0.85)");
+  stroke(10, y, W-20, 110, "#fff", 2);
+  wrapText(game.msg.lines[game.msg.i], 22, y+16, W-44, 18, 14, "#fff");
+  text("A: next", W-24, y+110-18, 11, "#ffcf3a", "right");
+}
+function wrapText(str, x, y, maxW, lh, size, color) {
+  ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.fillStyle = color; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const words = str.split(" "); let line = "", yy = y;
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, yy); yy += lh; line = w; }
+    else line = test;
+  }
+  if (line) ctx.fillText(line, x, yy);
+}
+
+// ==============================================================
+// Screens
+// ==============================================================
+function drawTitle() {
+  clear("#1a1e46");
+  ctx.fillStyle = "#2a3d7a";
+  ctx.beginPath(); ctx.moveTo(0, 300); ctx.lineTo(120, 220); ctx.lineTo(240, 320); ctx.lineTo(360, 230); ctx.lineTo(360, 400); ctx.lineTo(0, 400); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#3a5f2a";
+  ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(90, 320); ctx.lineTo(200, 400); ctx.lineTo(320, 340); ctx.lineTo(360, 380); ctx.lineTo(360, 640); ctx.lineTo(0, 640); ctx.closePath(); ctx.fill();
+  drawMon({species:"CrimsonFungus"}, 90, 260, 1.1, 1);
+  drawMon({species:"Vinehop"},  180, 260, 1.2, 1);
+  drawMon({species:"Bolttoad"}, 270, 260, 1.1, -1);
+  drawMon({species:"Tidefrog"}, 180, 380, 1.1, 1);
+  text("CroakyMon", W/2, 60, 34, "#ffcf3a", "center");
+  text("Gotta Catch Them All!", W/2, 100, 16, "#4be0d0", "center");
+  text("v" + VERSION, W/2, 128, 10, "#8892c8", "center");
+  text("Press A / Space / Tap A", W/2, 500, 14, "#fff", "center");
+  text("Fundude Town awaits", W/2, 524, 12, "#a6adcf", "center");
+  if (pressed.a) { Audio.SFX.select(); game.state = STATE.CHOOSE; }
+}
+function drawChoose() {
+  clear("#141a3a");
+  text("Choose Your Trainer", W/2, 60, 22, "#ffcf3a", "center");
+  text("Left / Right to pick, A to start", W/2, 90, 12, "#a6adcf", "center");
+  const boyX = 100, girlX = 260, y = 250;
+  drawTrainerBig(boyX, y, "boy"); drawTrainerBig(girlX, y, "girl");
+  text("Boy", boyX, 380, 16, "#fff", "center"); text("Girl", girlX, 380, 16, "#fff", "center");
+  const sel = game.playerSprite === "boy" ? boyX : girlX;
+  stroke(sel-50, y-90, 100, 200, "#ffcf3a", 3);
+  if (pressed.left)  { Audio.SFX.menu(); game.playerSprite = "boy"; }
+  if (pressed.right) { Audio.SFX.menu(); game.playerSprite = "girl"; }
+  if (pressed.a) {
+    Audio.SFX.select(); game.state = STATE.OVERWORLD;
+    showMsg([
+      `Welcome to Fundude!`,
+      `First, visit Professor Ribbit's lab — it's the house with the green roof, just up and to the left.`,
+      `Step onto the red doormat marked "LAB" to go inside.`,
+      `She'll give you your very first CroakyMon so you can explore the tall grass safely.`,
+      `Arrows/WASD to move. B or Y to see your team.`
+    ], null);
+  }
+}
+function drawTrainerBig(cx, cy, kind) {
+  const shirt = kind === "boy" ? "#4a7fd6" : "#e05aa8";
+  const hair  = kind === "boy" ? "#4a2a10" : "#c48a1a";
+  ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(cx, cy+90, 40, 8, 0, 0, Math.PI*2); ctx.fill();
+  rect(cx-20, cy+40, 16, 45, "#2a3a6a"); rect(cx+4, cy+40, 16, 45, "#2a3a6a");
+  rect(cx-24, cy-20, 48, 65, shirt);
+  rect(cx-18, cy-70, 36, 40, "#f2c9a0");
+  rect(cx-18, cy-72, 36, 14, hair);
+  if (kind === "girl") { rect(cx-22, cy-58, 4, 25, hair); rect(cx+18, cy-58, 4, 25, hair); }
+  rect(cx-9, cy-52, 4, 5, "#111"); rect(cx+5, cy-52, 4, 5, "#111");
+}
+function drawOverworld() {
+  drawMap(); drawPlayer();
+  rect(0, 0, W, 22, "rgba(0,0,0,0.55)");
+  text(`Fundude Town`, 8, 5, 12, "#ffcf3a");
+  text(`Caught: ${game.caught.size}/${ALL_SPECIES.length}`, W-8, 5, 12, "#4be0d0", "right");
+  if (!game.hasStarter) {
+    // Blinking hint pointing to the professor's lab
+    if (Math.floor(game.frame/30) % 2 === 0) {
+      rect(0, 22, W, 18, "rgba(255,207,58,0.85)");
+      text("Go to Professor Ribbit's lab (green roof) first!", W/2, 24, 11, "#1a1a1a", "center");
+    }
+  }
+}
+function drawBattle() {
+  const b = game.battle;
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, "#4a7fd6"); g.addColorStop(1, "#9ec3f0");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "#7d5a2a";
+  ctx.beginPath(); ctx.ellipse(W-90, 210, 80, 22, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(90, 360, 90, 26, 0, 0, Math.PI*2); ctx.fill();
+
+  const sh = shakeOffset();
+  ctx.save(); ctx.translate(sh.x, sh.y);
+  drawHPBox(20, 30, `Wild ${displayName(b.wild.species)}`, b.wild.hp, b.wild.maxHP);
+  drawMon(b.wild, W-90, 200, 1.4, -1);
+  drawMon(b.active, 90, 340, 1.6, 1);
+  drawHPBox(W-190, 300, `${displayName(b.active.species)}`, b.active.hp, b.active.maxHP);
+  ctx.restore();
+
+  drawVfxOverlay();
+
+  const y = H - 200;
+  rect(0, y, W, 200, "#0e1230");
+  stroke(0, y, W, 200, "#4be0d0", 2);
+  if (!b.ended) {
+    if (b.menu === "root") {
+      text(`What will ${displayName(b.active.species)} do?`, 16, y+12, 13, "#fff");
+      ROOT_OPTS.forEach((opt, i) => {
+        const oy = y+40 + i*22;
+        text((i === b.cursor ? "> " : "  ") + opt, 24, oy, 15, i===b.cursor ? "#ffcf3a" : "#fff");
+      });
+      text("A: select", W-16, y+180, 10, "#a6adcf", "right");
+    } else if (b.menu === "fight") {
+      text(`Choose a move:`, 16, y+12, 13, "#fff");
+      const moves = b.active.moves;
+      moves.forEach((mk, i) => {
+        const m = MOVES[mk];
+        const oy = y+40 + i*22;
+        text((i === b.cursor ? "> " : "  ") + `${m.name}  [${m.type}]`, 24, oy, 13, i===b.cursor ? "#ffcf3a" : "#fff");
+      });
+      text("A: use   B: back", W-16, y+180, 10, "#a6adcf", "right");
+    }
+  } else {
+    text(`Press A to continue`, W/2, y+90, 14, "#ffcf3a", "center");
+  }
+}
+function drawHPBox(x, y, name, hp, maxHP) {
+  rect(x, y, 170, 44, "rgba(0,0,0,0.7)");
+  stroke(x, y, 170, 44, "#fff", 2);
+  text(name, x+8, y+6, 12, "#fff");
+  const bw = 150, frac = Math.max(0, hp/maxHP);
+  rect(x+8, y+26, bw, 8, "#333");
+  const color = frac > 0.5 ? "#4bd07a" : frac > 0.2 ? "#ffcf3a" : "#e05a5a";
+  rect(x+8, y+26, bw*frac, 8, color);
+  text(`${hp}/${maxHP}`, x+162, y+6, 10, "#a6adcf", "right");
+}
+function drawCollection() {
+  clear("#0e1230");
+  text("Your Team", W/2, 20, 22, "#ffcf3a", "center");
+  text(`${game.caught.size} of ${ALL_SPECIES.length} caught`, W/2, 50, 12, "#a6adcf", "center");
+  ALL_SPECIES.forEach((sp, i) => {
+    const cx = 90 + (i%2)*180;
+    const cy = 130 + Math.floor(i/2)*180;
+    rect(cx-70, cy-60, 140, 150, "#1a2050");
+    stroke(cx-70, cy-60, 140, 150, "#4be0d0", 1);
+    if (game.caught.has(sp)) {
+      drawMon({species:sp}, cx, cy+10, 1.0, 1);
+      text(displayName(sp), cx, cy+58, 12, "#fff", "center");
+      text(SPECIES[sp].type, cx, cy+74, 10, "#a6adcf", "center");
+    } else {
+      text("???", cx, cy+10, 24, "#333", "center");
+      text("Not yet caught", cx, cy+58, 10, "#666", "center");
+    }
+  });
+  text("B: back", W/2, H-40, 12, "#ffcf3a", "center");
+  if (pressed.b) { Audio.SFX.back(); game.state = STATE.OVERWORLD; }
+}
+function drawWin() {
+  clear("#1a1e46");
+  text("You did it!", W/2, 80, 28, "#ffcf3a", "center");
+  text("You caught them all!", W/2, 120, 18, "#4be0d0", "center");
+  drawMon({species:"Bolttoad"}, 90, 320, 1.2, 1);
+  drawMon({species:"CrimsonFungus"}, 180, 260, 1.4, 1);
+  drawMon({species:"Vinehop"}, 270, 320, 1.2, -1);
+  drawMon({species:"Tidefrog"}, 180, 400, 1.3, 1);
+  text("(Team Evil Soup will return... v0.3)", W/2, 540, 11, "#a6adcf", "center");
+  text("A: play again", W/2, 580, 14, "#ffcf3a", "center");
+  if (pressed.a) {
+    Audio.SFX.select();
+    game.party = []; game.caught = new Set();
+    game.hasStarter = false;
+    game.player.x = 7; game.player.y = 10;
+    game.state = STATE.TITLE;
+  }
+}
+
+// ==============================================================
+// Main loop
+// ==============================================================
+let lastT = performance.now();
+function tick(now) {
+  const dt = Math.min(50, now - lastT); lastT = now;
+  game.frame++;
+  ensureMusic();
+  updateVfx(dt);
+  if (game.msg) updateMsg();
+  else if (!game.vfx) {
+    switch (game.state) {
+      case STATE.OVERWORLD: updateOverworld(); break;
+      case STATE.BATTLE:    updateBattle(); break;
+      case STATE.PROFESSOR: updateProfessor(); break;
+    }
+  }
+  switch (game.state) {
+    case STATE.TITLE:      drawTitle(); break;
+    case STATE.CHOOSE:     drawChoose(); break;
+    case STATE.OVERWORLD:  drawOverworld(); break;
+    case STATE.BATTLE:     drawBattle(); break;
+    case STATE.COLLECTION: drawCollection(); break;
+    case STATE.WIN:        drawWin(); break;
+    case STATE.PROFESSOR:  drawProfessorScreen(); break;
+  }
+  drawMsg();
+  for (const k in pressed) pressed[k] = false;
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
