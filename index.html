@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.5.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.6.0</title>
 <style>
   :root { --safe-b: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -46,7 +46,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.5.0</div>
+  <div id="note">v0.6.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -62,7 +62,7 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.5.0
+// CroakyMon Gotta Catch Them All! — v0.6.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
@@ -89,14 +89,10 @@ window.addEventListener("resize", fit); fit();
 // polygon art when a species has no .glb loaded (yet).
 // ==============================================================
 const Mon3D = (() => {
-  const REG = {};        // species -> { model, box, ready }
-  const CONFIG = {       // species -> asset URL (relative)
-    CrimsonFungus: "assets/crimson-fungus.glb",
-    CryptyCrab:    "assets/crypty-crab.glb",
-    // Vinehop: "assets/vinehop.glb",
-    // Tidefrog: "assets/tidefrog.glb",
-    // Bolttoad: "assets/bolttoad.glb",
-  };
+  const REG = {};        // species (PascalCase) -> { model, ready }
+  const TRIED = new Set(); // urls we've already asked GLTFLoader for
+  // The species -> URL mapping is derived from the SPECIES table at runtime
+  // (populated after the manifest loads). See registerFromSpecies below.
   let three = null, renderer = null, scene = null, camera = null, lights = null;
   let off = null; // offscreen canvas
   const OFF_SIZE = 256; // render resolution per mon
@@ -131,34 +127,41 @@ const Mon3D = (() => {
     scene.add(new THREE.AmbientLight(0xffffff, 0.35));
     ready = true;
   }
-  function loadAll() {
+  function loadOne(species, url) {
     if (!ready) return;
+    if (TRIED.has(url)) return;
+    TRIED.add(url);
     const Loader = window.__GLTFLoader; if (!Loader) return;
     const loader = new Loader();
-    Object.entries(CONFIG).forEach(([species, url]) => {
-      loader.load(url,
-        (gltf) => {
-          const model = gltf.scene;
-          // Auto-fit: scale/translate model so it stands ~2 units tall centred at origin
-          const box = new three.Box3().setFromObject(model);
-          const size = new three.Vector3(); box.getSize(size);
-          const center = new three.Vector3(); box.getCenter(center);
-          const target = 2.0;
-          const s = target / Math.max(size.x, size.y, size.z);
-          model.scale.setScalar(s);
-          // Recompute after scale
-          const box2 = new three.Box3().setFromObject(model);
-          const c2 = new three.Vector3(); box2.getCenter(c2);
-          const size2 = new three.Vector3(); box2.getSize(size2);
-          model.position.sub(c2);
-          model.position.y += size2.y * 0.5; // stand on ground
-          REG[species] = { model, ready: true };
-          console.log("Mon3D: loaded", species, url);
-        },
-        undefined,
-        (err) => { console.warn("Mon3D: failed to load", url, err && err.message || err); }
-      );
-    });
+    loader.load(url,
+      (gltf) => {
+        const model = gltf.scene;
+        // Auto-fit: scale so the longest bound is ~2 units, then centre at origin.
+        const box = new three.Box3().setFromObject(model);
+        const size = new three.Vector3(); box.getSize(size);
+        const target = 2.0;
+        const s = target / Math.max(size.x, size.y, size.z);
+        model.scale.setScalar(s);
+        const box2 = new three.Box3().setFromObject(model);
+        const c2 = new three.Vector3(); box2.getCenter(c2);
+        const size2 = new three.Vector3(); box2.getSize(size2);
+        model.position.sub(c2);
+        model.position.y += size2.y * 0.5;
+        REG[species] = { model, ready: true };
+        console.log("Mon3D: loaded", species, url);
+      },
+      undefined,
+      (err) => { console.warn("Mon3D: failed to load", url, err && err.message || err); }
+    );
+  }
+  // Called after the manifest loads (or on boot for the built-ins). Reads the
+  // current SPECIES table and tries to load a .glb for each species.
+  function registerFromSpecies() {
+    if (typeof SPECIES !== "object") return;
+    for (const key of Object.keys(SPECIES)) {
+      const slug = SPECIES[key]._kebab || pascalToKebab(key);
+      loadOne(key, "assets/mons/" + slug + ".glb");
+    }
   }
   // Render a species to the offscreen canvas at a given facing (±1), then blit onto dstCtx.
   function render(species, dstCtx, cx, cy, scale, facing, tSeconds) {
@@ -190,13 +193,14 @@ const Mon3D = (() => {
   function has(species) {
     const e = REG[species]; return !!(e && e.ready);
   }
-  // Wire up when Three arrives
+  // Wire up when Three arrives. Registers the built-ins immediately; the
+  // manifest loader will call registerFromSpecies again after it merges.
   function boot() {
-    if (window.__THREE) { init(window.__THREE); loadAll(); }
-    else window.addEventListener("three-ready", () => { init(window.__THREE); loadAll(); }, { once: true });
+    if (window.__THREE) { init(window.__THREE); registerFromSpecies(); }
+    else window.addEventListener("three-ready", () => { init(window.__THREE); registerFromSpecies(); }, { once: true });
   }
   boot();
-  return { render, has };
+  return { render, has, registerFromSpecies };
 })();
 
 // ==============================================================
@@ -401,7 +405,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.5.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.6.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -421,22 +425,84 @@ const MOVES = {
   Tackle:             { type:"normal",   power:8,  name:"Tackle" },
 };
 
-// Four species — each a DIFFERENT creature shape.
-// CrimsonFungus=dragon whelp, Bolttoad=lightning bird, Vinehop=sprout turtle, Tidefrog=ink squid.
-const SPECIES = {
-  CrimsonFungus: { type:"fire",     color:"#e85a2a", accent:"#ffd05a", maxHP:34, moves:["HotDiggityDoggyDog","Tackle"], shape:"dragon" },
-  Bolttoad:  { type:"electric", color:"#f2c744", accent:"#fff2a8", maxHP:32, moves:["ThunderWay","Tackle"],         shape:"bird" },
-  Vinehop:   { type:"grass",    color:"#4fbf5a", accent:"#c4f770", maxHP:36, moves:["TreeStomp","Tackle"],          shape:"turtle" },
-  Tidefrog:  { type:"water",    color:"#3a9be0", accent:"#c9f0ff", maxHP:36, moves:["SharkWave","Tackle"],          shape:"squid" },
+// Species defaults — used until assets/mons/mons.json loads and merges on top.
+// Shapes map to polygon-fallback draw functions (drawCrimsonFungus etc). To add
+// a new creature: drop a .glb into assets/mons/ — a manifest entry is auto-added
+// and the game picks it up.
+const DEFAULT_SPECIES = {
+  CrimsonFungus: { type:"fire",     color:"#e85a2a", accent:"#ffd05a", maxHP:34, moves:["HotDiggityDoggyDog","Tackle"], shape:"dragon", starter:true  },
+  Bolttoad:      { type:"electric", color:"#f2c744", accent:"#fff2a8", maxHP:32, moves:["ThunderWay","Tackle"],         shape:"bird",   starter:false },
+  Vinehop:       { type:"grass",    color:"#4fbf5a", accent:"#c4f770", maxHP:36, moves:["TreeStomp","Tackle"],          shape:"turtle", starter:true  },
+  Tidefrog:      { type:"water",    color:"#3a9be0", accent:"#c9f0ff", maxHP:36, moves:["SharkWave","Tackle"],          shape:"squid",  starter:true  },
   // Dual-type wild-only creature: normal + ghost. Both moves get STAB.
-  CryptyCrab:{ type:"normal",   type2:"ghost", color:"#b8a8d0", accent:"#e8dfff", maxHP:35, moves:["SpookyPinch","Tackle"], shape:"crab" },
+  CryptyCrab:    { type:"normal",   type2:"ghost", color:"#b8a8d0", accent:"#e8dfff", maxHP:35, moves:["SpookyPinch","Tackle"], shape:"crab", starter:false },
 };
-const ALL_SPECIES = Object.keys(SPECIES);
+// Mutable — overwritten when the manifest loads.
+let SPECIES     = Object.assign({}, DEFAULT_SPECIES);
+let ALL_SPECIES = Object.keys(SPECIES);
+let STARTERS    = ALL_SPECIES.filter(k => SPECIES[k].starter);
+
+// Filename slug helpers: manifest / GLB filenames are kebab-case,
+// code keys are PascalCase.
+function kebabToPascal(s){ return String(s).split(/[-_ ]+/).map(w => w ? w[0].toUpperCase() + w.slice(1) : "").join(""); }
+function pascalToKebab(s){ return String(s).replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase(); }
+
+// --- Manifest loader ---
+// Fetches assets/mons/mons.json and merges each entry into SPECIES.
+// Entry fields (all optional): name, types (or type + optional type2), hp,
+// moves, starter, shape, color, accent. Missing fields fall back to
+// DEFAULT_SPECIES[<key>] then to sane defaults, so a brand-new mon still
+// battles even if you haven't customised it yet.
+async function loadMonsManifest() {
+  try {
+    const r = await fetch("assets/mons/mons.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const manifest = await r.json();
+    applyManifest(manifest);
+    console.log("Mon manifest loaded:", Object.keys(manifest).length, "entries");
+  } catch (e) {
+    console.warn("Mon manifest not loaded, using embedded defaults:", e.message);
+  }
+}
+function applyManifest(manifest) {
+  const merged = {};
+  for (const [kebab, entry] of Object.entries(manifest)) {
+    const key = kebabToPascal(kebab);
+    const base = DEFAULT_SPECIES[key] || {};
+    const types = Array.isArray(entry.types) ? entry.types : (entry.type ? [entry.type] : null);
+    merged[key] = {
+      type:    (types && types[0]) || base.type   || "normal",
+      type2:   (types && types[1]) || entry.type2 || base.type2 || null,
+      color:   entry.color  || base.color  || "#a8a8a8",
+      accent:  entry.accent || base.accent || "#e0e0e0",
+      maxHP:   entry.hp || entry.maxHP || base.maxHP || 30,
+      moves:   Array.isArray(entry.moves) && entry.moves.length ? entry.moves : (base.moves ? base.moves.slice() : ["Tackle"]),
+      shape:   entry.shape || base.shape || "blob",
+      starter: entry.starter != null ? !!entry.starter : (base.starter || false),
+      displayName: entry.name || null,
+      _kebab:  kebab,
+    };
+    // Silently swap unknown move names for Tackle so a manifest typo never crashes battle.
+    merged[key].moves = merged[key].moves.map(m => MOVES[m] ? m : "Tackle");
+  }
+  // Keep any DEFAULT_SPECIES entries the manifest doesn't cover (dev-time fallback).
+  for (const [key, v] of Object.entries(DEFAULT_SPECIES)) {
+    if (!merged[key]) merged[key] = Object.assign({ _kebab: pascalToKebab(key) }, v);
+  }
+  SPECIES     = merged;
+  ALL_SPECIES = Object.keys(SPECIES);
+  STARTERS    = ALL_SPECIES.filter(k => SPECIES[k].starter);
+  Mon3D.registerFromSpecies();
+}
 
 // Turn an internal species key like "CrimsonFungus" into a display name
 // with spaces inserted before capital letters ("Crimson Fungus"). Single-word
 // keys like "Bolttoad" pass through unchanged.
-function displayName(sp) { return sp.replace(/([a-z])([A-Z])/g, "$1 $2"); }
+function displayName(sp) {
+  const s = SPECIES[sp];
+  if (s && s.displayName) return s.displayName;
+  return sp.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
 
 function makeMon(species) {
   const s = SPECIES[species];
@@ -485,8 +551,8 @@ function walkable(t) { return t === "." || t === "P" || t === "T" || t === "D"; 
 // State
 // ==============================================================
 const STATE = { TITLE:"title", CHOOSE:"choose", OVERWORLD:"overworld", BATTLE:"battle", COLLECTION:"collection", WIN:"win", PROFESSOR:"professor" };
-// Starter options — one of each of the three requested types.
-const STARTERS = ["CrimsonFungus","Vinehop","Tidefrog"];
+// Starter options are derived at manifest load from SPECIES entries with
+// starter:true. STARTERS is declared as `let` earlier in the file.
 const game = {
   state: STATE.TITLE, prevMusicMood: null,
   playerSprite: "boy",
@@ -800,6 +866,28 @@ function drawCryptyCrab(cx, cy, S, facing) {
   ctx.beginPath(); ctx.arc(cx+16*S*f, cy-10*S, 1.5*S, 0, Math.PI*2); ctx.fill();
 }
 
+// Generic fallback for auto-added species whose polygon shape is "blob".
+// Uses the species' color + accent so it at least looks distinctive.
+function drawBlob(cx, cy, S, facing, species) {
+  const sd = SPECIES[species] || {};
+  const body = sd.color  || "#a8a8a8";
+  const belly = sd.accent || "#e0e0e0";
+  const f = facing;
+  shadow(cx, cy+22*S, 22*S, 5*S);
+  // Rounded body
+  polyFill([[cx, cy-16*S],[cx+18*S, cy-4*S],[cx+14*S, cy+18*S],[cx-14*S, cy+18*S],[cx-18*S, cy-4*S]], body);
+  polyFill([[cx, cy-2*S],[cx+9*S, cy+6*S],[cx+6*S, cy+16*S],[cx-6*S, cy+16*S],[cx-9*S, cy+6*S]], belly);
+  // Blinky eyes turned to the facing side
+  pupil(cx-4*S, cy-8*S, 2.5*S);
+  pupil(cx+4*S, cy-8*S, 2.5*S);
+  // A tiny smile
+  ctx.strokeStyle = "#2a1a1a"; ctx.lineWidth = 1.5*S;
+  ctx.beginPath(); ctx.arc(cx + 2*S*f, cy+2*S, 3*S, 0, Math.PI); ctx.stroke();
+  // Little feet
+  polyFill([[cx-8*S, cy+18*S],[cx-11*S, cy+22*S],[cx-5*S, cy+22*S]], body);
+  polyFill([[cx+8*S, cy+18*S],[cx+11*S, cy+22*S],[cx+5*S, cy+22*S]], body);
+}
+
 function drawMon(m, cx, cy, scale=1, facing=1) {
   // Prefer real 3D model when this species has a .glb loaded
   const t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
@@ -811,6 +899,7 @@ function drawMon(m, cx, cy, scale=1, facing=1) {
   if (sh === "turtle") return drawVinehop(cx, cy, scale, facing);
   if (sh === "squid")  return drawTidefrog(cx, cy, scale, facing);
   if (sh === "crab")   return drawCryptyCrab(cx, cy, scale, facing);
+  return drawBlob(cx, cy, scale, facing, m.species);
 }
 
 // ==============================================================
@@ -1503,6 +1592,9 @@ function tick(now) {
   for (const k in pressed) pressed[k] = false;
   requestAnimationFrame(tick);
 }
+// Fire-and-forget the manifest fetch. Game boots with DEFAULT_SPECIES and
+// swaps in the manifest-merged version as soon as it arrives.
+loadMonsManifest();
 requestAnimationFrame(tick);
 </script>
 </body>

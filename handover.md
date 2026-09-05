@@ -1,6 +1,6 @@
 # Handover — CroakyMon Gotta Catch Them All!
 
-**Version:** 0.5.0
+**Version:** 0.6.0
 **Owner:** Gareth
 **Designer:** Gareth's child
 **Last updated:** 2026-09-05
@@ -45,6 +45,18 @@ Then open http://localhost:8000/croakymon.html. On GitHub Pages, no extra setup 
 | 8 | Win | Catch them all |
 | 9 | Art | Low-poly and colourful |
 | 10 | Name | CroakyMon Gotta Catch Them All! |
+
+## New in v0.6.0
+**Data-driven mon roster — one folder, one JSON file, done.**
+- Creatures now live in **`assets/mons/`**: their `.glb` model plus an entry in **`assets/mons/mons.json`** keyed by the filename slug.
+- The game fetches `mons.json` at startup and merges each entry into the internal species table. Every field is optional; unknown moves silently fall back to `Tackle` so a mistyped entry never crashes battle.
+- **Add a creature in ~30 seconds**: drop `flame-cat.glb` into `assets/mons/`. The auto-sync daemon pushes it; a new GitHub Action **`sync-mons-manifest.yml`** appends a default entry (normal type, HP 30, Tackle only, wild-only, blob shape); the existing optimiser Action shrinks the `.glb`. Reload — the mon appears in the wild.
+- **Customise later**: edit `mons.json` in a text editor (or ask the assistant). Fields: `name`, `types` (array, 1–2), `hp`, `moves`, `starter` (bool), `shape` (`dragon`/`bird`/`turtle`/`squid`/`crab`/`blob`), `color`, `accent`.
+- **Generic polygon fallback** (`drawBlob`) for auto-added mons before you set a proper shape — coloured by the entry's `color`/`accent` so it at least looks distinct.
+- **Existing creatures kept**: `mons.json` ships with all 5 current species pre-filled so nothing regresses. `DEFAULT_SPECIES` in the code doubles as an offline fallback if the manifest fetch fails.
+- **STARTERS** is now derived at manifest load from entries with `"starter": true` — mark or unmark starters by editing the JSON, no code change needed.
+- **Optimiser action** re-scoped to `assets/mons/**.glb` (was `assets/**.glb`).
+- New human-facing doc at `assets/mons/README.md` explains the whole workflow.
 
 ## New in v0.5.0
 **CryptyCrab — first wild-only dual-type creature.**
@@ -150,6 +162,7 @@ All also know Tackle (normal) as a backup.
 - **v1.0** — Full 8–12 species roster the child helps name; boss fight with Team Evil Soup's Chef.
 
 ## Changelog
+- **0.6.0** (2026-09-05) — Data-driven roster: `assets/mons/` folder holding both `.glb` models and a `mons.json` manifest. Game loads the manifest at boot and merges into `SPECIES`; STARTERS derived from `starter:true` entries. New `sync-mons-manifest.yml` Action auto-adds default entries for new `.glb` files. Generic `drawBlob` polygon fallback. Optimiser Action re-scoped to `assets/mons/`. New `assets/mons/README.md`.
 - **0.5.0** (2026-09-05) — Added CryptyCrab (normal/ghost, wild-only) with `Spooky Pinch`; added Ghost elemental type; dual-type defence + dual-type STAB in `damage()`; polygon fallback; title + win + collection screens updated for five species; asset slot for `crypty-crab.glb`. All previous validation still passes, plus new dual-type asserts.
 - **0.4.0** (2026-09-05) — Real 3D CroakyMon models via Three.js + GLTFLoader; hidden offscreen WebGL render blitted onto the 2D canvas per draw call; auto-fit / centred / three-point lit / idle-bobbing; graceful fallback to polygon art per species; new `assets/` folder for `.glb` files with README; single-file rule relaxed for this project only.
 - **0.3.0** (2026-09-05) — Professor Ribbit's lab (top-left house, green roof, "LAB" doormat); wild encounters gated on picking a starter; three-card starter picker (Frogniter / Vinehop / Tidefrog); blinking HUD nudge until picked. Removed the old random-starter mid-battle fallback. All previous validation still passes; new map-shape assertions added.
