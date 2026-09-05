@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.8.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.9.0</title>
 <!-- Playful display + UI fonts (loaded by the tablet browser) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.8.0</div>
+  <div id="note">v0.9.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -66,11 +66,13 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.8.0
+// CroakyMon Gotta Catch Them All! — v0.9.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
+// Per-game title shown in the logo and browser tab. Charlie's fork overrides this.
+const GAME_TITLE = "CroakyMon";
 const W = 360, H = 640;
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -119,7 +121,7 @@ const Mon3D = (() => {
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
     // Lights: key + fill + rim, tuned for saturated cartoon materials.
-    // Values increased for v0.8.0 — earlier setup was reading dark on OLED tablets.
+    // Values increased for v0.9.0 — earlier setup was reading dark on OLED tablets.
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
@@ -416,7 +418,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.8.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.9.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -445,8 +447,6 @@ const DEFAULT_SPECIES = {
   Bolttoad:      { type:"electric", color:"#f2c744", accent:"#fff2a8", maxHP:32, moves:["ThunderWay","Tackle"],         shape:"bird",   starter:false },
   Vinehop:       { type:"grass",    color:"#4fbf5a", accent:"#c4f770", maxHP:36, moves:["TreeStomp","Tackle"],          shape:"turtle", starter:true  },
   Tidefrog:      { type:"water",    color:"#3a9be0", accent:"#c9f0ff", maxHP:36, moves:["SharkWave","Tackle"],          shape:"squid",  starter:true  },
-  // Dual-type wild-only creature: normal + ghost. Both moves get STAB.
-  CryptyCrab:    { type:"normal",   type2:"ghost", color:"#b8a8d0", accent:"#e8dfff", maxHP:35, moves:["SpookyPinch","Tackle"], shape:"crab", starter:false },
 };
 // Mutable — overwritten when the manifest loads.
 let SPECIES     = Object.assign({}, DEFAULT_SPECIES);
@@ -604,7 +604,7 @@ function text(str, x, y, size=12, color="#fff", align="left") {
 }
 
 // ==============================================================
-// UI kit (v0.8.0) — rounded rects, type badges, pill buttons.
+// UI kit (v0.9.0) — rounded rects, type badges, pill buttons.
 // ==============================================================
 function rrect(x, y, w, h, r, fill, stroke, sw) {
   const rr = Math.min(r, w/2, h/2);
@@ -674,7 +674,7 @@ function pillButton(x, y, w, h, label, opts) {
 // ==============================================================
 // Tiles / houses
 // ==============================================================
-// ---- Town tile art (v0.8.0 rework) ----
+// ---- Town tile art (v0.9.0 rework) ----
 // Small deterministic PRNG so per-tile decorations (flowers, cracks) stay stable
 // across frames and don't shimmer.
 function hashRand(x, y, salt) {
@@ -907,7 +907,7 @@ function drawMap() {
       drawRoof(x*TILE, y*TILE, "prof");
   }
 }
-// Chibi trainer sprite (v0.8.0) — outlined pixel-art style
+// Chibi trainer sprite (v0.9.0) — outlined pixel-art style
 function drawPlayer() {
   const p = game.player;
   let px, py;
@@ -1220,6 +1220,10 @@ function drawBlob(cx, cy, S, facing, species) {
 }
 
 function drawMon(m, cx, cy, scale=1, facing=1, pose="side") {
+  // If species has been removed from the manifest, silently fall back to a blob
+  // rather than crashing — this keeps forked games (Sam vs Charlie) safe when
+  // one no longer has a creature the other still references.
+  if (!m || !SPECIES[m.species]) return drawBlob(cx, cy, scale, facing, m && m.species);
   // Prefer real 3D model when this species has a .glb loaded
   const t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
   if (Mon3D.has(m.species) && Mon3D.render(m.species, ctx, cx, cy, scale, facing, t, pose)) return;
@@ -1811,9 +1815,26 @@ function wrapText(str, x, y, maxW, lh, size, color) {
 // ==============================================================
 // Screens
 // ==============================================================
+// Auto-arranges a set of species into a centred grid (rows of at most `perRow`).
+// Used on title / win screens so the layout adapts to any subset of ALL_SPECIES.
+function layoutMonsGrid(species, cx, topY, colGap, rowGap, perRow, pose, scale) {
+  const N = species.length;
+  if (!N) return;
+  for (let i = 0; i < N; i++) {
+    const row = Math.floor(i / perRow);
+    const rowFirst = row * perRow;
+    const rowCount = Math.min(perRow, N - rowFirst);
+    const col = i - rowFirst;
+    const startX = cx - ((rowCount - 1) * colGap) / 2;
+    const px = startX + col * colGap;
+    const py = topY + row * rowGap;
+    drawMon({ species: species[i] }, px, py, scale, 0, pose);
+  }
+}
+
 // Bouncy chunky logo — outlined letters with sunset gradient, per-letter tilt & bob.
 function drawLogo(cx, cy, tSec) {
-  const word = "CroakyMon";
+  const word = GAME_TITLE;
   const size = 54;
   ctx.save();
   ctx.font = `400 ${size}px ${LOGO_FONT}`;
@@ -1881,13 +1902,9 @@ function drawTitle() {
   ctx.beginPath(); ctx.moveTo(0, 300); ctx.lineTo(120, 220); ctx.lineTo(240, 320); ctx.lineTo(360, 230); ctx.lineTo(360, 400); ctx.lineTo(0, 400); ctx.closePath(); ctx.fill();
   ctx.fillStyle = "#3a5f2a";
   ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(90, 320); ctx.lineTo(200, 400); ctx.lineTo(320, 340); ctx.lineTo(360, 380); ctx.lineTo(360, 640); ctx.lineTo(0, 640); ctx.closePath(); ctx.fill();
-  // Mons face forward on the title (pose:"portrait" for 3D; polygons draw normally)
+  // Auto-arrange whatever mons the current game has: rows of 3 max, centred.
   const t = performance.now() / 1000;
-  drawMon({species:"CrimsonFungus"}, 70,  280, 1.0, 0, "portrait");
-  drawMon({species:"Vinehop"},       180, 280, 1.1, 0, "portrait");
-  drawMon({species:"Bolttoad"},      290, 280, 1.0, 0, "portrait");
-  drawMon({species:"Tidefrog"},      120, 410, 1.0, 0, "portrait");
-  drawMon({species:"CryptyCrab"},    240, 410, 1.1, 0, "portrait");
+  layoutMonsGrid(ALL_SPECIES, W/2, 280, 100, 130, 3, "portrait", 1.0);
   // Punchy logo + subtitle
   drawLogo(W/2, 88, t);
   drawSubtitle(W/2, 138, t);
@@ -2108,7 +2125,7 @@ function drawHPBox(x, y, name, hp, maxHP) {
   text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
 }
 // ==============================================================
-// CroakyDex (v0.8.0) — a proper grid + detail view
+// CroakyDex (v0.9.0) — a proper grid + detail view
 // ==============================================================
 function updateDex() {
   if (game.dexView !== "detail") {
@@ -2244,11 +2261,7 @@ function drawWin() {
   clear("#1a1e46");
   text("You did it!", W/2, 80, 28, "#ffcf3a", "center");
   text("You caught them all!", W/2, 120, 18, "#4be0d0", "center");
-  drawMon({species:"Bolttoad"},      70,  300, 1.1, 1);
-  drawMon({species:"CrimsonFungus"}, 180, 260, 1.3, 1);
-  drawMon({species:"Vinehop"},       290, 300, 1.1, -1);
-  drawMon({species:"Tidefrog"},      120, 400, 1.1, 1);
-  drawMon({species:"CryptyCrab"},    240, 400, 1.2, -1);
+  layoutMonsGrid(ALL_SPECIES, W/2, 280, 100, 130, 3, "portrait", 1.15);
   text("(Team Evil Soup will return... v0.3)", W/2, 540, 11, "#a6adcf", "center");
   text("A: play again", W/2, 580, 14, "#ffcf3a", "center");
   if (pressed.a) {
@@ -2291,6 +2304,9 @@ function tick(now) {
   for (const k in pressed) pressed[k] = false;
   requestAnimationFrame(tick);
 }
+// Keep the browser tab in sync with the per-game title constant.
+try { document.title = GAME_TITLE + " Gotta Catch Them All!  v" + VERSION; } catch(e){}
+
 // Fire-and-forget the manifest fetch. Game boots with DEFAULT_SPECIES and
 // swaps in the manifest-merged version as soon as it arrives.
 loadMonsManifest();

@@ -1,6 +1,6 @@
 # Handover — CroakyMon Gotta Catch Them All!
 
-**Version:** 0.8.0
+**Version:** 0.9.0
 **Owner:** Gareth
 **Designer:** Gareth's child
 **Last updated:** 2026-09-05
@@ -45,6 +45,14 @@ Then open http://localhost:8000/croakymon.html. On GitHub Pages, no extra setup 
 | 8 | Win | Catch them all |
 | 9 | Art | Low-poly and colourful |
 | 10 | Name | CroakyMon Gotta Catch Them All! |
+
+## New in v0.9.0
+**Forked into two per-kid games (Sam / Charlie).** Groundwork so each kid's game evolves independently:
+- `GAME_TITLE` constant at the top of the file — Charlie's fork just overrides it to `"CatchPoke"`. Feeds the logo, the browser tab title, and any future title uses.
+- `drawMon` made defensive: any reference to a species that no longer exists in `SPECIES` falls back to the polygon blob instead of crashing. Safe against per-fork trims.
+- Title and win screens auto-lay-out whatever species the current game has via a new `layoutMonsGrid` helper (rows of 3, centred). Previously they hardcoded five specific mons.
+- `mons.json` for Sam's game (this repo) no longer includes `crypty-crab` — CryptyCrab is Charlie's creature.
+- `.tools/install-sync.sh` and `.tools/com.croakymon.sync.plist` refactored to derive the LaunchAgent label from the repo folder name, so a second daemon for Charlie's `CatchPoke` folder coexists cleanly with the one watching `CroakyMon`. Same script content for both.
 
 ## New in v0.8.0
 **Visual overhaul — proper fonts, redrawn town, chibi player, revamped lab.**
@@ -190,6 +198,7 @@ All also know Tackle (normal) as a backup.
 - **v1.0** — Full 8–12 species roster the child helps name; boss fight with Team Evil Soup's Chef.
 
 ## Changelog
+- **0.9.0** (2026-09-05) — Fork prep for per-kid games. `GAME_TITLE` constant, defensive `drawMon`, auto-layout on title/win via `layoutMonsGrid`, per-repo LaunchAgent labels via `install-sync.sh`. Removed CryptyCrab from Sam's `mons.json` + `DEFAULT_SPECIES`.
 - **0.8.0** (2026-09-05) — Big visual overhaul: Google Fonts (Fredoka + Bangers), redrawn town tiles (grass/path/fence/tall-grass), gradient houses with proper doors + mullioned windows, cast-shadowed roofs, chibi trainer sprite with cap + backpack, redone trainer-select screen, revamped professor's lab (bookshelf, beakers, plant, framed poster — no more pokéballs), rounded HUD pill + softer hint banner. Fixed sed-generated font-string bug in the same pass.
 - **0.7.0** (2026-09-05) — Visual pass: chunky animated logo; face-forward + brighter 3D on title; shared UI kit (rrect, panel, drawTypeBadge, pillButton); redesigned battle menu with type-coloured move buttons and segmented HP bars; drop-shadowed message overlay; proper CroakyDex with grid + detail views. Fixed VERSION const drift.
 - **0.6.0** (2026-09-05) — Data-driven roster: `assets/mons/` folder holding both `.glb` models and a `mons.json` manifest. Game loads the manifest at boot and merges into `SPECIES`; STARTERS derived from `starter:true` entries. New `sync-mons-manifest.yml` Action auto-adds default entries for new `.glb` files. Generic `drawBlob` polygon fallback. Optimiser Action re-scoped to `assets/mons/`. New `assets/mons/README.md`.

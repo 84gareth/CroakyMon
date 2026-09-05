@@ -19,16 +19,6 @@
     "color": "#e85a2a",
     "accent": "#ffd05a"
   },
-  "crypty-crab": {
-    "name": "Crypty Crab",
-    "types": ["normal", "ghost"],
-    "hp": 35,
-    "moves": ["SpookyPinch", "Tackle"],
-    "starter": false,
-    "shape": "crab",
-    "color": "#b8a8d0",
-    "accent": "#e8dfff"
-  },
   "tidefrog": {
     "name": "Tidefrog",
     "types": ["water"],
