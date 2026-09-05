@@ -1,6 +1,6 @@
 # Handover — CroakyMon Gotta Catch Them All!
 
-**Version:** 0.6.0
+**Version:** 0.7.0
 **Owner:** Gareth
 **Designer:** Gareth's child
 **Last updated:** 2026-09-05
@@ -45,6 +45,18 @@ Then open http://localhost:8000/croakymon.html. On GitHub Pages, no extra setup 
 | 8 | Win | Catch them all |
 | 9 | Art | Low-poly and colourful |
 | 10 | Name | CroakyMon Gotta Catch Them All! |
+
+## New in v0.7.0
+**Big visual pass — logo, CroakyDex, kid-friendly UI, brighter 3D.**
+- Fixed a long-standing bug: the `VERSION` constant was stuck at "0.2.0" while the header comment said the right number, so the title chip read wrong. All version bumps now stay in sync.
+- Meaty logo: chunky outlined `CroakyMon` word-mark with sunset gradient, per-letter tilt, subtle per-letter bob, dark drop-shadow, glossy top-edge shine. Subtitle sits in its own teal pill. Version chip below.
+- Title screen mons face the camera head-on (`pose:"portrait"`), with a gentle sway. Previously they were locked to the 3/4 battle angle.
+- Mon3D lighting cranked up: key light 1.4→2.4, fill 0.6→1.1, rim 0.5→0.9, ambient 0.35→0.8. Models pop on the OLED tablet.
+- New UI kit shared across every screen: `rrect` (rounded rects), `panel` (drop-shadowed cards), `drawTypeBadge` (rounded type chips), `pillButton` (chunky buttons with drop shadow + top-glossy highlight + focus ring).
+- Battle menu redone with pillButton: FIGHT/CATCH/RUN are big coloured buttons; move buttons are type-coloured with a type badge on the right; HP bars segmented with tick marks.
+- Message box is now a drop-shadowed panel with a bouncing "A ›" prompt.
+- **CroakyDex** (was the plain team screen): grid view with numbered cards, model portraits, per-mon type badges, silhouette placeholder for uncaught. Cursor navigation (arrows), A opens detail view — big model, HP bar, up-to-two move pills, type badges, STARTER pill if applicable, L/R to flip through species. B goes back.
+- Overworld B now always opens the dex on the grid (dexView reset), not wherever it was left.
 
 ## New in v0.6.0
 **Data-driven mon roster — one folder, one JSON file, done.**
@@ -162,6 +174,7 @@ All also know Tackle (normal) as a backup.
 - **v1.0** — Full 8–12 species roster the child helps name; boss fight with Team Evil Soup's Chef.
 
 ## Changelog
+- **0.7.0** (2026-09-05) — Visual pass: chunky animated logo; face-forward + brighter 3D on title; shared UI kit (rrect, panel, drawTypeBadge, pillButton); redesigned battle menu with type-coloured move buttons and segmented HP bars; drop-shadowed message overlay; proper CroakyDex with grid + detail views. Fixed VERSION const drift.
 - **0.6.0** (2026-09-05) — Data-driven roster: `assets/mons/` folder holding both `.glb` models and a `mons.json` manifest. Game loads the manifest at boot and merges into `SPECIES`; STARTERS derived from `starter:true` entries. New `sync-mons-manifest.yml` Action auto-adds default entries for new `.glb` files. Generic `drawBlob` polygon fallback. Optimiser Action re-scoped to `assets/mons/`. New `assets/mons/README.md`.
 - **0.5.0** (2026-09-05) — Added CryptyCrab (normal/ghost, wild-only) with `Spooky Pinch`; added Ghost elemental type; dual-type defence + dual-type STAB in `damage()`; polygon fallback; title + win + collection screens updated for five species; asset slot for `crypty-crab.glb`. All previous validation still passes, plus new dual-type asserts.
 - **0.4.0** (2026-09-05) — Real 3D CroakyMon models via Three.js + GLTFLoader; hidden offscreen WebGL render blitted onto the 2D canvas per draw call; auto-fit / centred / three-point lit / idle-bobbing; graceful fallback to polygon art per species; new `assets/` folder for `.glb` files with README; single-file rule relaxed for this project only.

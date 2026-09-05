@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.6.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.7.0</title>
 <style>
   :root { --safe-b: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -46,7 +46,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.6.0</div>
+  <div id="note">v0.7.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -62,11 +62,11 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.6.0
+// CroakyMon Gotta Catch Them All! — v0.7.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
-const VERSION = "0.2.0";
+const VERSION = "0.7.0";
 const W = 360, H = 640;
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -114,17 +114,18 @@ const Mon3D = (() => {
     camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
-    // Lights: key + fill + rim, tuned for saturated cartoon materials
-    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    // Lights: key + fill + rim, tuned for saturated cartoon materials.
+    // Values increased for v0.7.0 — earlier setup was reading dark on OLED tablets.
+    const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0x88bbff, 0.6);
+    const fill = new THREE.DirectionalLight(0x88bbff, 1.1);
     fill.position.set(-3, 2, 2);
     scene.add(fill);
-    const rim = new THREE.DirectionalLight(0xffcf3a, 0.5);
+    const rim = new THREE.DirectionalLight(0xffcf3a, 0.9);
     rim.position.set(0, 3, -4);
     scene.add(rim);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     ready = true;
   }
   function loadOne(species, url) {
@@ -164,7 +165,7 @@ const Mon3D = (() => {
     }
   }
   // Render a species to the offscreen canvas at a given facing (±1), then blit onto dstCtx.
-  function render(species, dstCtx, cx, cy, scale, facing, tSeconds) {
+  function render(species, dstCtx, cx, cy, scale, facing, tSeconds, pose) {
     const entry = REG[species];
     if (!ready || !entry || !entry.ready) return false;
     // Clear the scene of previous mon
@@ -173,7 +174,13 @@ const Mon3D = (() => {
       if (!ch.isLight) scene.remove(ch);
     }
     const m = entry.model;
-    m.rotation.y = (facing >= 0 ? 1 : -1) * (Math.PI * 0.25);
+    // pose="portrait" faces the camera head-on (title screen / dex).
+    // pose="side" or default is the 3/4 battle angle.
+    if (pose === "portrait") {
+      m.rotation.y = Math.sin(tSeconds * 1.2) * 0.15; // gentle sway
+    } else {
+      m.rotation.y = (facing >= 0 ? 1 : -1) * (Math.PI * 0.25);
+    }
     // Idle bob
     m.position.y = (m.userData.baseY ?? m.position.y);
     if (m.userData.baseY === undefined) m.userData.baseY = m.position.y;
@@ -405,7 +412,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.6.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.7.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -560,6 +567,8 @@ const game = {
   party: [], caught: new Set(),
   hasStarter: false,
   starterCursor: 1, // default to grass (middle)
+  dexCursor: 0,     // which entry is highlighted in the CroakyDex
+  dexView: "grid",  // "grid" | "detail"
   encounterCooldown: 0,
   battle: null, msg: null, vfx: null, frame: 0,
 };
@@ -584,6 +593,74 @@ function stroke(x,y,w,h,c,lw=1) { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.strok
 function text(str, x, y, size=12, color="#fff", align="left") {
   ctx.fillStyle = color; ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = align; ctx.textBaseline = "top"; ctx.fillText(str, x, y);
+}
+
+// ==============================================================
+// UI kit (v0.7.0) — rounded rects, type badges, pill buttons.
+// ==============================================================
+function rrect(x, y, w, h, r, fill, stroke, sw) {
+  const rr = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+rr, y);
+  ctx.arcTo(x+w, y, x+w, y+h, rr);
+  ctx.arcTo(x+w, y+h, x, y+h, rr);
+  ctx.arcTo(x, y+h, x, y, rr);
+  ctx.arcTo(x, y, x+w, y, rr);
+  ctx.closePath();
+  if (fill)   { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = sw || 2; ctx.stroke(); }
+}
+// Drop-shadowed panel for kid-friendly chunky cards
+function panel(x, y, w, h, fill="#1e2456", stroke="#4be0d0", r=12) {
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(x+w/2, y+h+4, w*0.45, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  rrect(x, y, w, h, r, fill, stroke, 2);
+}
+const TYPE_COLORS = {
+  fire:"#e85a2a", water:"#3a9be0", grass:"#4bd07a",
+  electric:"#f2c744", normal:"#c8b39d", ghost:"#8a72b8"
+};
+function drawTypeBadge(cx, cy, type, size=1) {
+  const label = String(type || "").toUpperCase();
+  ctx.font = `800 ${9*size}px -apple-system, sans-serif`;
+  const w = ctx.measureText(label).width + 14*size;
+  const h = 16*size;
+  const x = cx - w/2, y = cy - h/2;
+  const bg = TYPE_COLORS[type] || "#888";
+  rrect(x, y, w, h, h/2, bg, "rgba(0,0,0,0.55)", 1.5);
+  // slight highlight bar on top for depth
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  rrect(x+2, y+2, w-4, h/2-2, (h-4)/2, "#fff");
+  ctx.restore();
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `800 ${9*size}px -apple-system, sans-serif`;
+  ctx.fillText(label, cx, cy + 0.5);
+}
+// Chunky pill button with drop shadow, optional focus highlight
+function pillButton(x, y, w, h, label, opts) {
+  opts = opts || {};
+  const focused = !!opts.focused;
+  const bg = opts.bg || (focused ? "#ffcf3a" : "#3a4390");
+  const fg = opts.fg || (focused ? "#1a1a1a" : "#fff");
+  // shadow
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  rrect(x+2, y+3, w, h, h/2, "rgba(0,0,0,0.35)");
+  ctx.restore();
+  rrect(x, y, w, h, h/2, bg, focused ? "#fff" : "rgba(255,255,255,0.5)", focused ? 3 : 2);
+  // top glossy highlight
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  rrect(x+4, y+3, w-8, h/2-3, (h-6)/2, "#fff");
+  ctx.restore();
+  ctx.fillStyle = fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `800 ${opts.fontSize || 14}px -apple-system, sans-serif`;
+  ctx.fillText(label, x+w/2, y+h/2+1);
 }
 
 // ==============================================================
@@ -888,10 +965,10 @@ function drawBlob(cx, cy, S, facing, species) {
   polyFill([[cx+8*S, cy+18*S],[cx+11*S, cy+22*S],[cx+5*S, cy+22*S]], body);
 }
 
-function drawMon(m, cx, cy, scale=1, facing=1) {
+function drawMon(m, cx, cy, scale=1, facing=1, pose="side") {
   // Prefer real 3D model when this species has a .glb loaded
   const t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
-  if (Mon3D.has(m.species) && Mon3D.render(m.species, ctx, cx, cy, scale, facing, t)) return;
+  if (Mon3D.has(m.species) && Mon3D.render(m.species, ctx, cx, cy, scale, facing, t, pose)) return;
   // Fallback: hand-drawn polygon art
   const sh = SPECIES[m.species].shape;
   if (sh === "dragon") return drawCrimsonFungus(cx, cy, scale, facing);
@@ -1085,7 +1162,7 @@ function updateOverworld() {
     else if (keys.down)  tryStartMove(0,  1, "down");
     else if (keys.left)  tryStartMove(-1, 0, "left");
     else if (keys.right) tryStartMove(1,  0, "right");
-    if (pressed.b) { Audio.SFX.menu(); game.state = STATE.COLLECTION; }
+    if (pressed.b) { Audio.SFX.menu(); game.state = STATE.COLLECTION; game.dexView = "grid"; }
   }
 }
 function startEncounter() {
@@ -1374,11 +1451,16 @@ function updateMsg() {
 }
 function drawMsg() {
   if (!game.msg) return;
-  const y = H - 130;
-  rect(10, y, W-20, 110, "rgba(0,0,0,0.85)");
-  stroke(10, y, W-20, 110, "#fff", 2);
-  wrapText(game.msg.lines[game.msg.i], 22, y+16, W-44, 18, 14, "#fff");
-  text("A: next", W-24, y+110-18, 11, "#ffcf3a", "right");
+  const y = H - 140;
+  panel(10, y, W-20, 120, "#0e1230", "#ffcf3a", 14);
+  wrapText(game.msg.lines[game.msg.i], 22, y+18, W-44, 20, 15, "#fff");
+  // Bouncing "A" prompt
+  const t = performance.now() / 300;
+  const bob = Math.sin(t) * 1.5;
+  rrect(W-52, y+120-24 + bob, 42, 20, 10, "#ffcf3a", "#1a0a2a", 2);
+  ctx.fillStyle = "#1a0a2a"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "800 11px -apple-system, sans-serif";
+  ctx.fillText("A ›", W-31, y+120-14 + bob);
 }
 function wrapText(str, x, y, maxW, lh, size, color) {
   ctx.font = `700 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
@@ -1395,22 +1477,101 @@ function wrapText(str, x, y, maxW, lh, size, color) {
 // ==============================================================
 // Screens
 // ==============================================================
+// Bouncy chunky logo — outlined letters with sunset gradient, per-letter tilt & bob.
+function drawLogo(cx, cy, tSec) {
+  const word = "CroakyMon";
+  const size = 48;
+  ctx.save();
+  ctx.font = `900 ${size}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const widths = [];
+  let total = 0;
+  for (const ch of word) { const w = ctx.measureText(ch).width; widths.push(w); total += w; }
+  total += (word.length - 1) * 2; // small tracking
+  let x = cx - total/2;
+  for (let i = 0; i < word.length; i++) {
+    const ch = word[i];
+    const half = widths[i] / 2;
+    const bx = x + half;
+    const bounce = Math.sin(tSec*3 + i*0.55) * 3;
+    const tilt = Math.sin(i*0.7) * 0.06;
+    ctx.save();
+    ctx.translate(bx, cy + bounce);
+    ctx.rotate(tilt);
+    // drop shadow
+    ctx.fillStyle = "rgba(10,5,30,0.55)";
+    ctx.fillText(ch, 4, 5);
+    // thick outline
+    ctx.strokeStyle = "#1a0a2a"; ctx.lineWidth = 8; ctx.lineJoin = "round";
+    ctx.strokeText(ch, 0, 0);
+    // sunset gradient fill
+    const g = ctx.createLinearGradient(0, -size/2, 0, size/2);
+    g.addColorStop(0.00, "#fff2a8");
+    g.addColorStop(0.45, "#ffcf3a");
+    g.addColorStop(1.00, "#e85a2a");
+    ctx.fillStyle = g;
+    ctx.fillText(ch, 0, 0);
+    // shine on top edge
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-widths[i]/2, -size/2, widths[i], size*0.28);
+    ctx.clip();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = "#fff";
+    ctx.fillText(ch, 0, 0);
+    ctx.restore();
+    ctx.restore();
+    x += widths[i] + 2;
+  }
+  ctx.restore();
+}
+// Bouncy subtitle pill
+function drawSubtitle(cx, cy, tSec) {
+  const label = "GOTTA CATCH THEM ALL!";
+  ctx.font = "800 14px -apple-system, sans-serif";
+  const w = ctx.measureText(label).width + 26, h = 26;
+  const bob = Math.sin(tSec*2.5) * 1.5;
+  rrect(cx - w/2, cy - h/2 + bob, w, h, h/2, "#4be0d0", "#1a0a2a", 3);
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  rrect(cx - w/2 + 4, cy - h/2 + bob + 3, w - 8, h/2 - 3, (h-6)/2, "#fff");
+  ctx.restore();
+  ctx.fillStyle = "#0b1f1c"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "800 14px -apple-system, sans-serif";
+  ctx.fillText(label, cx, cy + bob + 1);
+}
+
 function drawTitle() {
   clear("#1a1e46");
   ctx.fillStyle = "#2a3d7a";
   ctx.beginPath(); ctx.moveTo(0, 300); ctx.lineTo(120, 220); ctx.lineTo(240, 320); ctx.lineTo(360, 230); ctx.lineTo(360, 400); ctx.lineTo(0, 400); ctx.closePath(); ctx.fill();
   ctx.fillStyle = "#3a5f2a";
   ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(90, 320); ctx.lineTo(200, 400); ctx.lineTo(320, 340); ctx.lineTo(360, 380); ctx.lineTo(360, 640); ctx.lineTo(0, 640); ctx.closePath(); ctx.fill();
-  drawMon({species:"CrimsonFungus"}, 70,  260, 1.0, 1);
-  drawMon({species:"Vinehop"},       160, 260, 1.1, 1);
-  drawMon({species:"Bolttoad"},      250, 260, 1.0, -1);
-  drawMon({species:"Tidefrog"},      120, 380, 1.0, 1);
-  drawMon({species:"CryptyCrab"},    220, 380, 1.1, -1);
-  text("CroakyMon", W/2, 60, 34, "#ffcf3a", "center");
-  text("Gotta Catch Them All!", W/2, 100, 16, "#4be0d0", "center");
-  text("v" + VERSION, W/2, 128, 10, "#8892c8", "center");
-  text("Press A / Space / Tap A", W/2, 500, 14, "#fff", "center");
-  text("Fundude Town awaits", W/2, 524, 12, "#a6adcf", "center");
+  // Mons face forward on the title (pose:"portrait" for 3D; polygons draw normally)
+  const t = performance.now() / 1000;
+  drawMon({species:"CrimsonFungus"}, 70,  280, 1.0, 0, "portrait");
+  drawMon({species:"Vinehop"},       180, 280, 1.1, 0, "portrait");
+  drawMon({species:"Bolttoad"},      290, 280, 1.0, 0, "portrait");
+  drawMon({species:"Tidefrog"},      120, 410, 1.0, 0, "portrait");
+  drawMon({species:"CryptyCrab"},    240, 410, 1.1, 0, "portrait");
+  // Punchy logo + subtitle
+  drawLogo(W/2, 88, t);
+  drawSubtitle(W/2, 138, t);
+  // Version chip
+  ctx.save();
+  ctx.font = "800 10px -apple-system, sans-serif";
+  const vLabel = "v" + VERSION;
+  const vw = ctx.measureText(vLabel).width + 12;
+  rrect(W/2 - vw/2, 158, vw, 16, 8, "rgba(255,255,255,0.15)");
+  ctx.fillStyle = "#c9f0ff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(vLabel, W/2, 166);
+  ctx.restore();
+  // Chunky call-to-action button
+  const btnW = 240, btnH = 46;
+  const bob = Math.sin(t*4) * 3;
+  pillButton(W/2 - btnW/2, 500 + bob, btnW, btnH, "PRESS A TO START",
+             { focused:true, fontSize:16 });
+  text("Fundude Town awaits", W/2, 560, 12, "#c9c9ff", "center");
   if (pressed.a) { Audio.SFX.select(); game.state = STATE.CHOOSE; }
 }
 function drawChoose() {
@@ -1478,69 +1639,199 @@ function drawBattle() {
 
   drawVfxOverlay();
 
+  // Chunky menu panel
   const y = H - 200;
-  rect(0, y, W, 200, "#0e1230");
-  stroke(0, y, W, 200, "#4be0d0", 2);
+  rrect(6, y+4, W-12, 190, 16, "#0e1230", "#4be0d0", 3);
   if (!b.ended) {
     if (b.menu === "root") {
-      text(`What will ${displayName(b.active.species)} do?`, 16, y+12, 13, "#fff");
+      text(`What will ${displayName(b.active.species)} do?`, 20, y+18, 13, "#c9f0ff");
+      // 3 chunky pill buttons stacked
+      const bw = W - 40, bh = 38, bx = 20;
       ROOT_OPTS.forEach((opt, i) => {
-        const oy = y+40 + i*22;
-        text((i === b.cursor ? "> " : "  ") + opt, 24, oy, 15, i===b.cursor ? "#ffcf3a" : "#fff");
+        const by = y + 46 + i * 44;
+        const colours = {
+          FIGHT: { bg:"#e85a2a", fg:"#fff" },
+          CATCH: { bg:"#4be0d0", fg:"#0b1f1c" },
+          RUN:   { bg:"#8892c8", fg:"#fff" }
+        }[opt] || { bg:"#3a4390", fg:"#fff" };
+        pillButton(bx, by, bw, bh, opt, {
+          focused: i === b.cursor,
+          bg: i === b.cursor ? colours.bg : "#2a3170",
+          fg: i === b.cursor ? colours.fg : "#c9c9ff",
+          fontSize: 16
+        });
       });
-      text("A: select", W-16, y+180, 10, "#a6adcf", "right");
     } else if (b.menu === "fight") {
-      text(`Choose a move:`, 16, y+12, 13, "#fff");
+      text(`Choose a move:`, 20, y+18, 13, "#c9f0ff");
       const moves = b.active.moves;
+      const bw = W - 40, bh = 42, bx = 20;
       moves.forEach((mk, i) => {
         const m = MOVES[mk];
-        const oy = y+40 + i*22;
-        text((i === b.cursor ? "> " : "  ") + `${m.name}  [${m.type}]`, 24, oy, 13, i===b.cursor ? "#ffcf3a" : "#fff");
+        const by = y + 46 + i * 48;
+        const color = TYPE_COLORS[m.type] || "#3a4390";
+        pillButton(bx, by, bw, bh, m.name.toUpperCase(), {
+          focused: i === b.cursor,
+          bg: i === b.cursor ? color : "rgba(255,255,255,0.12)",
+          fg: "#fff",
+          fontSize: 13
+        });
+        // Type badge on the right side of the button
+        drawTypeBadge(bx + bw - 30, by + bh/2, m.type, 0.85);
       });
-      text("A: use   B: back", W-16, y+180, 10, "#a6adcf", "right");
+      text("B: back", W-24, y+180, 10, "#c9c9ff", "right");
     }
   } else {
-    text(`Press A to continue`, W/2, y+90, 14, "#ffcf3a", "center");
+    pillButton(W/2 - 120, y+80, 240, 40, "PRESS A TO CONTINUE", { focused:true, fontSize:14 });
   }
 }
 function drawHPBox(x, y, name, hp, maxHP) {
-  rect(x, y, 170, 44, "rgba(0,0,0,0.7)");
-  stroke(x, y, 170, 44, "#fff", 2);
-  text(name, x+8, y+6, 12, "#fff");
+  rrect(x, y, 170, 48, 10, "rgba(0,0,0,0.75)", "#fff", 2);
+  text(name, x+10, y+6, 12, "#fff");
   const bw = 150, frac = Math.max(0, hp/maxHP);
-  rect(x+8, y+26, bw, 8, "#333");
+  // Track
+  rrect(x+8, y+26, bw, 12, 6, "#221a2e", "#000", 1);
   const color = frac > 0.5 ? "#4bd07a" : frac > 0.2 ? "#ffcf3a" : "#e05a5a";
-  rect(x+8, y+26, bw*frac, 8, color);
-  text(`${hp}/${maxHP}`, x+162, y+6, 10, "#a6adcf", "right");
+  // Filled bar
+  if (frac > 0) rrect(x+8, y+26, bw*frac, 12, 6, color);
+  // Segment ticks on the track for readability
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 1;
+  for (let i=1;i<10;i++){ const gx = x+8 + bw*i/10; ctx.beginPath(); ctx.moveTo(gx, y+27); ctx.lineTo(gx, y+37); ctx.stroke(); }
+  ctx.restore();
+  text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
+}
+// ==============================================================
+// CroakyDex (v0.7.0) — a proper grid + detail view
+// ==============================================================
+function updateDex() {
+  if (game.dexView !== "detail") {
+    // grid navigation
+    const cols = 2, count = ALL_SPECIES.length;
+    if (pressed.left)  { game.dexCursor = (game.dexCursor + count - 1) % count; Audio.SFX.menu(); }
+    if (pressed.right) { game.dexCursor = (game.dexCursor + 1) % count; Audio.SFX.menu(); }
+    if (pressed.up)    { game.dexCursor = (game.dexCursor - cols + count) % count; Audio.SFX.menu(); }
+    if (pressed.down)  { game.dexCursor = (game.dexCursor + cols) % count; Audio.SFX.menu(); }
+    if (pressed.a)     { Audio.SFX.select(); game.dexView = "detail"; }
+    if (pressed.b)     { Audio.SFX.back(); game.state = STATE.OVERWORLD; }
+  } else {
+    // detail: L/R flip through species, B closes
+    const count = ALL_SPECIES.length;
+    if (pressed.left)  { game.dexCursor = (game.dexCursor + count - 1) % count; Audio.SFX.menu(); }
+    if (pressed.right) { game.dexCursor = (game.dexCursor + 1) % count; Audio.SFX.menu(); }
+    if (pressed.b || pressed.a) { Audio.SFX.back(); game.dexView = "grid"; }
+  }
 }
 function drawCollection() {
-  clear("#0e1230");
-  text("Your Team", W/2, 20, 22, "#ffcf3a", "center");
-  text(`${game.caught.size} of ${ALL_SPECIES.length} caught`, W/2, 50, 12, "#a6adcf", "center");
-  // 2-col, 3-row grid — fits 5+ species without overflowing the fixed viewport.
-  const cardW = 150, cardH = 130, gapX = 20, gapY = 10;
+  if (game.dexView === "detail") return drawDexDetail();
+  drawDexGrid();
+}
+function drawDexGrid() {
+  // background gradient
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, "#0e1230"); g.addColorStop(1, "#1a2058");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // Header
+  text("CROAKYDEX", W/2, 18, 22, "#ffcf3a", "center");
+  const caughtLabel = `Caught: ${game.caught.size} / ${ALL_SPECIES.length}`;
+  ctx.font = "800 12px -apple-system, sans-serif";
+  const cw = ctx.measureText(caughtLabel).width + 20;
+  rrect(W/2 - cw/2, 46, cw, 20, 10, "#4be0d0");
+  text(caughtLabel, W/2, 51, 12, "#0b1f1c", "center");
+  // Grid: 2 cols
+  const cardW = 150, cardH = 140, gapX = 14, gapY = 12;
   const startX = (W - cardW*2 - gapX) / 2;
-  const startY = 80;
+  const startY = 82;
+  const t = performance.now() / 1000;
   ALL_SPECIES.forEach((sp, i) => {
     const col = i % 2, row = Math.floor(i / 2);
     const x = startX + col * (cardW + gapX);
     const y = startY + row * (cardH + gapY);
     const cx = x + cardW / 2;
-    rect(x, y, cardW, cardH, "#1a2050");
-    stroke(x, y, cardW, cardH, "#4be0d0", 1);
+    const focused = i === game.dexCursor;
+    const sd = SPECIES[sp] || {};
+    const bg = focused ? "#3a4390" : "#1a2050";
+    const border = focused ? "#ffcf3a" : "#4be0d0";
+    panel(x, y, cardW, cardH, bg, border, 12);
+    // Number badge top-left
+    rrect(x+6, y+6, 34, 16, 8, "rgba(0,0,0,0.5)");
+    text(`#${String(i+1).padStart(3,"0")}`, x+23, y+9, 10, "#ffcf3a", "center");
     if (game.caught.has(sp)) {
-      drawMon({species:sp}, cx, y + 50, 0.85, 1);
-      text(displayName(sp), cx, y + cardH - 34, 12, "#fff", "center");
-      const sd = SPECIES[sp];
-      const typeLabel = sd.type + (sd.type2 ? " / " + sd.type2 : "");
-      text(typeLabel, cx, y + cardH - 18, 10, "#a6adcf", "center");
+      drawMon({species:sp}, cx, y + 58, 0.9, 0, "portrait");
+      text(displayName(sp), cx, y + cardH - 42, 12, "#fff", "center");
+      // type badges centred
+      const types = [sd.type, sd.type2].filter(Boolean);
+      const badgeSpacing = 46;
+      const startBadgeX = cx - ((types.length-1) * badgeSpacing) / 2;
+      types.forEach((t, ti) => drawTypeBadge(startBadgeX + ti * badgeSpacing, y + cardH - 20, t, 0.9));
     } else {
-      text("???", cx, y + 40, 22, "#333", "center");
-      text("Not yet caught", cx, y + cardH - 24, 10, "#666", "center");
+      text("???", cx, y + 50, 30, "#222a5a", "center");
+      text("Not yet caught", cx, y + cardH - 22, 10, "#4a5490", "center");
     }
   });
-  text("B: back", W/2, H-40, 12, "#ffcf3a", "center");
-  if (pressed.b) { Audio.SFX.back(); game.state = STATE.OVERWORLD; }
+  // Bottom hint bar
+  rrect(10, H-46, W-20, 32, 12, "rgba(0,0,0,0.5)");
+  text("← → ↑ ↓ browse   A: inspect   B: back", W/2, H-38, 12, "#c9f0ff", "center");
+}
+function drawDexDetail() {
+  const sp = ALL_SPECIES[game.dexCursor];
+  const sd = SPECIES[sp] || {};
+  const caught = game.caught.has(sp);
+  // Background — subtle themed to primary type
+  const primaryCol = TYPE_COLORS[sd.type] || "#3a4390";
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, primaryCol); g.addColorStop(1, "#0e1230");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // Top bar
+  rrect(10, 14, W-20, 44, 14, "rgba(0,0,0,0.55)", "#4be0d0", 2);
+  text(`#${String(game.dexCursor+1).padStart(3,"0")}`, 24, 26, 14, "#ffcf3a");
+  text(caught ? displayName(sp) : "???", W/2, 24, 20, "#fff", "center");
+  text("‹ L / R ›", W-24, 30, 11, "#c9f0ff", "right");
+  // Big model area
+  const cardX = 20, cardY = 74, cardW = W-40, cardH = 240;
+  panel(cardX, cardY, cardW, cardH, "rgba(0,0,0,0.35)", "#fff", 16);
+  if (caught) {
+    drawMon({species:sp}, W/2, cardY + cardH/2, 2.1, 0, "portrait");
+    // type badges
+    const types = [sd.type, sd.type2].filter(Boolean);
+    const spacing = 60;
+    const sx = W/2 - ((types.length-1)*spacing)/2;
+    types.forEach((t, i) => drawTypeBadge(sx + i*spacing, cardY + cardH - 18, t, 1.05));
+  } else {
+    text("???", W/2, cardY + cardH/2 - 40, 80, "#1a2050", "center");
+    text("Encounter one in the wild to reveal", W/2, cardY + cardH - 30, 12, "#c9c9ff", "center");
+  }
+  // Stats panel
+  const sY = cardY + cardH + 10;
+  panel(20, sY, W-40, 130, "rgba(0,0,0,0.55)", "#ffcf3a", 14);
+  if (caught) {
+    text("HP", 34, sY+14, 12, "#ffcf3a");
+    // HP bar segments (visual only — max HP as fraction of a 60 baseline)
+    const barW = W-90, barH = 12, barX = 60, barY = sY+14;
+    const frac = Math.min(1, (sd.maxHP || 30) / 60);
+    rrect(barX, barY, barW, barH, 6, "#221a2e");
+    rrect(barX, barY, barW*frac, barH, 6, "#4bd07a");
+    text(String(sd.maxHP || "-"), W-30, barY, 12, "#fff", "right");
+    text("MOVES", 34, sY+42, 12, "#ffcf3a");
+    (sd.moves || []).slice(0,2).forEach((mk, i) => {
+      const m = MOVES[mk] || { name:mk, type:"normal" };
+      const bx = 34 + i*(W-68)/2, by = sY + 60, bw = (W-84)/2, bh = 30;
+      const col = TYPE_COLORS[m.type] || "#3a4390";
+      rrect(bx, by, bw, bh, bh/2, col, "rgba(0,0,0,0.35)", 1.5);
+      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "800 11px -apple-system, sans-serif";
+      const label = m.name.length > 14 ? m.name.slice(0,13) + "…" : m.name;
+      ctx.fillText(label, bx + bw/2, by + bh/2 + 1);
+    });
+    if (sd.starter) {
+      rrect(W-90, sY-10, 70, 20, 10, "#ffcf3a", "#1a0a2a", 1.5);
+      text("STARTER", W-55, sY-7, 10, "#1a0a2a", "center");
+    }
+  } else {
+    text("Stats hidden until caught.", W/2, sY+50, 12, "#a6adcf", "center");
+  }
+  // Bottom prompt
+  rrect(10, H-46, W-20, 32, 12, "rgba(0,0,0,0.6)");
+  text("← → cycle   B / A: back", W/2, H-38, 12, "#c9f0ff", "center");
 }
 function drawWin() {
   clear("#1a1e46");
@@ -1574,9 +1865,10 @@ function tick(now) {
   if (game.msg) updateMsg();
   else if (!game.vfx) {
     switch (game.state) {
-      case STATE.OVERWORLD: updateOverworld(); break;
-      case STATE.BATTLE:    updateBattle(); break;
-      case STATE.PROFESSOR: updateProfessor(); break;
+      case STATE.OVERWORLD:  updateOverworld(); break;
+      case STATE.BATTLE:     updateBattle(); break;
+      case STATE.PROFESSOR:  updateProfessor(); break;
+      case STATE.COLLECTION: updateDex(); break;
     }
   }
   switch (game.state) {
