@@ -4,14 +4,20 @@ sim.js
 
 # OS / editor cruft
 .DS_Store
+._*
 *.swp
 Thumbs.db
 .vscode/
 .idea/
 
+# Finder alias files (Finder makes these when you drag with ⌘⌥)
+* alias
+* alias.txt
+
 # Backups of GLBs we optimize
 *.glb.bak
 *.glb.tmp
 
-.DS_Store
-assets alias
+# Auto-sync internals
+.tools/sync.log
+.tools/.sync.lock

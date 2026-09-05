@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs the CroakyMon auto-sync every 20 seconds, starting at login.
+  Install / reinstall with .tools/install-sync.sh; uninstall with .tools/uninstall-sync.sh.
+  The username path assumes ~/CroakyMon; edit REPO_PATH below if you moved the repo.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.croakymon.sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>REPO_PATH/.tools/sync.sh</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>20</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <!-- Include Homebrew's bin path so git/fswatch resolve identically to your shell -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>REPO_PATH/.tools/sync.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>REPO_PATH/.tools/sync.log</string>
+</dict>
+</plist>
