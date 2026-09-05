@@ -12,3 +12,6 @@ Thumbs.db
 # Backups of GLBs we optimize
 *.glb.bak
 *.glb.tmp
+
+.DS_Store
+assets alias
