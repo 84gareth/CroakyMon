@@ -5,7 +5,7 @@ name: Optimize GLB assets
 on:
   push:
     paths:
-      - 'assets/**.glb'
+      - 'assets/mons/**.glb'
 
 permissions:
   contents: write
@@ -27,9 +27,9 @@ jobs:
         run: |
           set -e
           # Find GLBs changed in this push (fall back to all if diff isn't available)
-          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'assets/**.glb' 2>/dev/null || true)
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'assets/mons/**.glb' 2>/dev/null || true)
           if [ -z "$CHANGED" ]; then
-            CHANGED=$(find assets -type f -name '*.glb')
+            CHANGED=$(find assets/mons -type f -name '*.glb')
           fi
           echo "Files to optimize:"
           echo "$CHANGED"
@@ -51,7 +51,7 @@ jobs:
         run: |
           git config user.name "gltf-optimizer"
           git config user.email "gltf-optimizer@users.noreply.github.com"
-          git add 'assets/**.glb' || true
+          git add 'assets/mons/**.glb' || true
           if ! git diff --cached --quiet; then
             git commit -m "chore(assets): optimize GLBs [skip optimize]"
             git push
