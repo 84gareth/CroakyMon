@@ -11,6 +11,7 @@
     ],
     "name": "Beatboxer",
     "shape": "blob",
+    "shared": false,
     "starter": false,
     "types": [
       "fire"
@@ -27,6 +28,7 @@
     ],
     "name": "Bolttoad",
     "shape": "bird",
+    "shared": true,
     "starter": false,
     "types": [
       "electric"
@@ -45,6 +47,7 @@
     ],
     "name": "Crimson Fungus",
     "shape": "dragon",
+    "shared": false,
     "starter": true,
     "types": [
       "fire"
@@ -61,6 +64,7 @@
     ],
     "name": "Tidefrog",
     "shape": "squid",
+    "shared": true,
     "starter": true,
     "types": [
       "water"
@@ -77,6 +81,7 @@
     ],
     "name": "Vinehop",
     "shape": "turtle",
+    "shared": true,
     "starter": true,
     "types": [
       "grass"

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.11.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.12.0</title>
 <!-- Playful display + UI fonts (loaded by the tablet browser) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.11.0</div>
+  <div id="note">v0.12.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -66,11 +66,11 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.11.0
+// CroakyMon Gotta Catch Them All! — v0.12.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 // Default win-count to trigger an evolution when a species declares evolvesTo
 // but doesn't override the threshold.
 const DEFAULT_EVOLVE_AT_WINS = 3;
@@ -84,10 +84,10 @@ const GAME_LOGO_STYLE = "sunset";
 // the built-in WebAudio chiptune loop, so the game never breaks if the mp3s
 // haven't been dropped in yet.
 const GAME_MUSIC = {
-  title:  "assets/audio/Pixelland.mp3",
-  town:   "assets/audio/Pixelland.mp3",
-  battle: "assets/audio/Fluffing%20a%20Duck.mp3",
-  win:    "assets/audio/Pixelland.mp3",
+  title:  "assets/audio/town.mp3",
+  town:   "assets/audio/town.mp3",
+  battle: "assets/audio/battle.mp3",
+  win:    "assets/audio/town.mp3",
 };
 const W = 360, H = 640;
 const canvas = document.getElementById("c");
@@ -137,7 +137,7 @@ const Mon3D = (() => {
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
     // Lights: key + fill + rim, tuned for saturated cartoon materials.
-    // Values increased for v0.11.0 — earlier setup was reading dark on OLED tablets.
+    // Values increased for v0.12.0 — earlier setup was reading dark on OLED tablets.
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
@@ -469,7 +469,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.11.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.12.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -541,8 +541,13 @@ function applyManifest(manifest) {
       moves:   Array.isArray(entry.moves) && entry.moves.length ? entry.moves : (base.moves ? base.moves.slice() : ["Tackle"]),
       shape:   entry.shape || base.shape || "blob",
       starter: entry.starter != null ? !!entry.starter : (base.starter || false),
+      // v0.12.0 — sharing between per-kid games.
+      // shared:true means "this creature belongs in BOTH Sam's and Charlie's
+      // games". A future sync workflow will mirror shared entries between
+      // the two repos; today it's metadata only.
+      shared:  entry.shared != null ? !!entry.shared : (base.shared || false),
       displayName: entry.name || null,
-      // Evolution (v0.11.0): `evolvesTo` is a kebab slug of the next form.
+      // Evolution (v0.12.0): `evolvesTo` is a kebab slug of the next form.
       // `evolvesAtWins` is how many battle victories the party mon needs before
       // it transforms (default 3). `evolutionOf` marks a mon as reachable ONLY
       // via evolution — it is excluded from wild encounters.
@@ -679,7 +684,7 @@ function text(str, x, y, size=12, color="#fff", align="left") {
 }
 
 // ==============================================================
-// UI kit (v0.11.0) — rounded rects, type badges, pill buttons.
+// UI kit (v0.12.0) — rounded rects, type badges, pill buttons.
 // ==============================================================
 function rrect(x, y, w, h, r, fill, stroke, sw) {
   const rr = Math.min(r, w/2, h/2);
@@ -749,7 +754,7 @@ function pillButton(x, y, w, h, label, opts) {
 // ==============================================================
 // Tiles / houses
 // ==============================================================
-// ---- Town tile art (v0.11.0 rework) ----
+// ---- Town tile art (v0.12.0 rework) ----
 // Small deterministic PRNG so per-tile decorations (flowers, cracks) stay stable
 // across frames and don't shimmer.
 function hashRand(x, y, salt) {
@@ -982,7 +987,7 @@ function drawMap() {
       drawRoof(x*TILE, y*TILE, "prof");
   }
 }
-// Chibi trainer sprite (v0.11.0) — outlined pixel-art style
+// Chibi trainer sprite (v0.12.0) — outlined pixel-art style
 function drawPlayer() {
   const p = game.player;
   let px, py;
@@ -1812,7 +1817,7 @@ function doFightTurn(moveKey) {
     }
   );
 }
-// v0.11.0 — evolution
+// v0.12.0 — evolution
 // Returns the PascalCase key of the mon's next form, or null if none applies.
 function evolutionTargetFor(mon) {
   if (!mon || !mon.species) return null;
@@ -2277,7 +2282,7 @@ function drawHPBox(x, y, name, hp, maxHP) {
   text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
 }
 // ==============================================================
-// CroakyDex (v0.11.0) — a proper grid + detail view
+// CroakyDex (v0.12.0) — a proper grid + detail view
 // ==============================================================
 function updateDex() {
   if (game.dexView !== "detail") {

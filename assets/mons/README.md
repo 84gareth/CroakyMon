@@ -39,6 +39,7 @@ Field | Default | Notes
 `hp` | `30` | Max HP.
 `moves` | `["Tackle"]` | Move keys. Known: `HotDiggityDoggyDog`, `ThunderWay`, `TreeStomp`, `SharkWave`, `SpookyPinch`, `Tackle`. Unknown names silently become `Tackle`.
 `starter` | `false` | Show in Professor Ribbit's lab as a starter choice.
+`shared` | `false` | `true` = this creature belongs in both Sam's and Charlie's games (will be auto-mirrored once the sync workflow lands). `false` = unique to this game only.
 `shape` | `"blob"` | Polygon fallback used when the `.glb` is still loading or missing. Built-ins: `dragon`, `bird`, `turtle`, `squid`, `crab`, `blob`.
 `color` | `"#a8a8a8"` | Primary colour (blob fallback + palette hint).
 `accent` | `"#e0e0e0"` | Belly / highlight.
