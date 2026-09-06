@@ -1,7 +1,9 @@
 name: Optimize GLB assets
 
-# Trigger only when a GLB in assets/ changes. Uses [skip optimize] in the
-# bot's own commit message to prevent infinite loops.
+# Trigger only when a GLB in assets/mons/ changes. Uses [skip optimize] in the
+# bot's own commit message to prevent infinite loops. Always continues on
+# per-file failure so one bad export can't red-X the whole run.
+
 on:
   push:
     paths:
@@ -20,41 +22,38 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install gltf-transform CLI
-        run: npm install -g @gltf-transform/cli sharp
+      - name: Install gltf-transform + sharp (pinned)
+        run: npm install -g @gltf-transform/cli@4 sharp@0.33.5
 
-      - name: Optimize changed GLBs
+      - name: Optimise GLBs (best effort)
+        continue-on-error: true
         run: |
-          set -e
-          # Find GLBs changed in this push (fall back to all if diff isn't available)
-          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'assets/mons/**.glb' 2>/dev/null || true)
-          if [ -z "$CHANGED" ]; then
-            CHANGED=$(find assets/mons -type f -name '*.glb')
-          fi
-          echo "Files to optimize:"
-          echo "$CHANGED"
-          for f in $CHANGED; do
+          set +e
+          shopt -s nullglob
+          for f in assets/mons/*.glb; do
             [ -f "$f" ] || continue
-            echo "--- Optimizing $f"
-            SIZE_BEFORE=$(stat -c %s "$f")
-            # 'optimize' runs Draco mesh compression + weld/dedupe/prune.
-            # Texture WebP is added separately because the flag name varies by CLI version.
-            gltf-transform optimize "$f" "$f.tmp.glb" --compress draco || cp "$f" "$f.tmp.glb"
-            mv "$f.tmp.glb" "$f"
-            gltf-transform webp "$f" "$f.tmp.glb" || cp "$f" "$f.tmp.glb"
-            mv "$f.tmp.glb" "$f"
-            SIZE_AFTER=$(stat -c %s "$f")
-            echo "    $f: $SIZE_BEFORE -> $SIZE_AFTER bytes"
+            before=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")
+            tmp="${f}.tmp.glb"
+            echo "--- Optimising $f ($before bytes)"
+            gltf-transform optimize "$f" "$tmp" \
+              --compress meshopt \
+              --texture-compress webp \
+              --texture-size 1024 \
+              && mv "$tmp" "$f"
+            rm -f "$tmp"
+            after=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")
+            echo "    $f: $before -> $after bytes"
           done
+          exit 0
 
-      - name: Commit optimized assets
+      - name: Commit optimised assets
         run: |
-          git config user.name "gltf-optimizer"
+          git config user.name  "gltf-optimizer"
           git config user.email "gltf-optimizer@users.noreply.github.com"
           git add 'assets/mons/**.glb' || true
           if ! git diff --cached --quiet; then
-            git commit -m "chore(assets): optimize GLBs [skip optimize]"
+            git commit -m "chore(assets): optimise GLBs [skip optimize]"
             git push
           else
-            echo "No changes after optimization."
+            echo "No changes after optimisation."
           fi
