@@ -1,76 +1,42 @@
 {
   "bolttoad": {
-    "accent": "#fff2a8",
-    "color": "#f2c744",
-    "hp": 32,
-    "moves": [
-      "ThunderWay",
-      "Tackle"
-    ],
     "name": "Bolttoad",
-    "shape": "bird",
+    "types": ["electric"],
+    "hp": 32,
+    "moves": ["ThunderWay", "Tackle"],
     "starter": false,
-    "types": [
-      "electric"
-    ]
+    "shape": "bird",
+    "color": "#f2c744",
+    "accent": "#fff2a8"
   },
   "crimson-fungus": {
-    "accent": "#ffd05a",
-    "color": "#e85a2a",
-    "hp": 34,
-    "moves": [
-      "HotDiggityDoggyDog",
-      "Tackle"
-    ],
     "name": "Crimson Fungus",
-    "shape": "dragon",
+    "types": ["fire"],
+    "hp": 34,
+    "moves": ["HotDiggityDoggyDog", "Tackle"],
     "starter": true,
-    "types": [
-      "fire"
-    ]
-  },
-  "crypty-crab": {
-    "accent": "#e0e0e0",
-    "color": "#a8a8a8",
-    "hp": 30,
-    "moves": [
-      "Tackle"
-    ],
-    "name": "Crypty Crab",
-    "shape": "blob",
-    "starter": false,
-    "types": [
-      "normal"
-    ]
+    "shape": "dragon",
+    "color": "#e85a2a",
+    "accent": "#ffd05a"
   },
   "tidefrog": {
-    "accent": "#c9f0ff",
-    "color": "#3a9be0",
-    "hp": 36,
-    "moves": [
-      "SharkWave",
-      "Tackle"
-    ],
     "name": "Tidefrog",
-    "shape": "squid",
+    "types": ["water"],
+    "hp": 36,
+    "moves": ["SharkWave", "Tackle"],
     "starter": true,
-    "types": [
-      "water"
-    ]
+    "shape": "squid",
+    "color": "#3a9be0",
+    "accent": "#c9f0ff"
   },
   "vinehop": {
-    "accent": "#c4f770",
-    "color": "#4fbf5a",
-    "hp": 36,
-    "moves": [
-      "TreeStomp",
-      "Tackle"
-    ],
     "name": "Vinehop",
-    "shape": "turtle",
+    "types": ["grass"],
+    "hp": 36,
+    "moves": ["TreeStomp", "Tackle"],
     "starter": true,
-    "types": [
-      "grass"
-    ]
+    "shape": "turtle",
+    "color": "#4fbf5a",
+    "accent": "#c4f770"
   }
 }
