@@ -1,42 +1,62 @@
 {
   "bolttoad": {
-    "name": "Bolttoad",
-    "types": ["electric"],
-    "hp": 32,
-    "moves": ["ThunderWay", "Tackle"],
-    "starter": false,
-    "shape": "bird",
+    "accent": "#fff2a8",
     "color": "#f2c744",
-    "accent": "#fff2a8"
+    "hp": 32,
+    "moves": [
+      "ThunderWay",
+      "Tackle"
+    ],
+    "name": "Bolttoad",
+    "shape": "bird",
+    "starter": false,
+    "types": [
+      "electric"
+    ]
   },
   "crimson-fungus": {
-    "name": "Crimson Fungus",
-    "types": ["fire"],
-    "hp": 34,
-    "moves": ["HotDiggityDoggyDog", "Tackle"],
-    "starter": true,
-    "shape": "dragon",
+    "accent": "#ffd05a",
     "color": "#e85a2a",
-    "accent": "#ffd05a"
+    "hp": 34,
+    "moves": [
+      "HotDiggityDoggyDog",
+      "Tackle"
+    ],
+    "name": "Crimson Fungus",
+    "shape": "dragon",
+    "starter": true,
+    "types": [
+      "fire"
+    ]
   },
   "tidefrog": {
-    "name": "Tidefrog",
-    "types": ["water"],
-    "hp": 36,
-    "moves": ["SharkWave", "Tackle"],
-    "starter": true,
-    "shape": "squid",
+    "accent": "#c9f0ff",
     "color": "#3a9be0",
-    "accent": "#c9f0ff"
+    "hp": 36,
+    "moves": [
+      "SharkWave",
+      "Tackle"
+    ],
+    "name": "Tidefrog",
+    "shape": "squid",
+    "starter": true,
+    "types": [
+      "water"
+    ]
   },
   "vinehop": {
-    "name": "Vinehop",
-    "types": ["grass"],
-    "hp": 36,
-    "moves": ["TreeStomp", "Tackle"],
-    "starter": true,
-    "shape": "turtle",
+    "accent": "#c4f770",
     "color": "#4fbf5a",
-    "accent": "#c4f770"
+    "hp": 36,
+    "moves": [
+      "TreeStomp",
+      "Tackle"
+    ],
+    "name": "Vinehop",
+    "shape": "turtle",
+    "starter": true,
+    "types": [
+      "grass"
+    ]
   }
 }
