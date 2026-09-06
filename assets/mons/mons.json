@@ -1,16 +1,19 @@
 {
   "beatboxer": {
-    "accent": "#e0e0e0",
-    "color": "#a8a8a8",
-    "hp": 30,
+    "accent": "#ffcf3a",
+    "color": "#c8362a",
+    "dexOrder": 20,
+    "evolutionOf": "crimson-fungus",
+    "hp": 52,
     "moves": [
+      "HotDiggityDoggyDog",
       "Tackle"
     ],
     "name": "Beatboxer",
     "shape": "blob",
     "starter": false,
     "types": [
-      "normal"
+      "fire"
     ]
   },
   "bolttoad": {
@@ -33,6 +36,8 @@
     "accent": "#ffd05a",
     "color": "#e85a2a",
     "dexOrder": 10,
+    "evolvesAtWins": 3,
+    "evolvesTo": "beatboxer",
     "hp": 34,
     "moves": [
       "HotDiggityDoggyDog",

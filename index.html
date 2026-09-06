@@ -2251,10 +2251,22 @@ function drawDexGrid() {
     const bg = focused ? "#3a4390" : "#1a2050";
     const border = focused ? "#ffcf3a" : "#4be0d0";
     panel(x, y, cardW, cardH, bg, border, 12);
-    // Number badge top-left
-    rrect(x+6, y+6, 34, 16, 8, "rgba(0,0,0,0.5)");
-    text(`#${String(i+1).padStart(3,"0")}`, x+23, y+9, 10, "#ffcf3a", "center");
-    if (game.caught.has(sp)) {
+    // Number badge top-left — uses the entry's own dexOrder so numbers survive
+    // reorders and match Sam's evolutionary slot (e.g. #010, #020).
+    const dexNum = typeof sd.dexOrder === "number" ? sd.dexOrder : (i+1);
+    rrect(x+6, y+6, 40, 16, 8, "rgba(0,0,0,0.5)");
+    text(`#${String(dexNum).padStart(3,"0")}`, x+26, y+9, 10, "#ffcf3a", "center");
+    // Top-right status pill: CAUGHT (green) or NOT SEEN (grey)
+    const isCaught = game.caught.has(sp);
+    const statusLabel = isCaught ? "CAUGHT" : "NOT SEEN";
+    ctx.font = `800 8.5px ${UI_FONT}`;
+    const stW = ctx.measureText(statusLabel).width + 12;
+    const stCol = isCaught ? "#4bd07a" : "#5a5a72";
+    rrect(x + cardW - stW - 6, y + 6, stW, 16, 8, stCol, "rgba(0,0,0,0.55)", 1.2);
+    ctx.fillStyle = isCaught ? "#0b1f14" : "#dcdce8";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(statusLabel, x + cardW - stW/2 - 6, y + 15);
+    if (isCaught) {
       drawMon({species:sp}, cx, y + 58, 0.9, 0, "portrait");
       text(displayName(sp), cx, y + cardH - 42, 12, "#fff", "center");
       // type badges centred
@@ -2263,8 +2275,19 @@ function drawDexGrid() {
       const startBadgeX = cx - ((types.length-1) * badgeSpacing) / 2;
       types.forEach((t, ti) => drawTypeBadge(startBadgeX + ti * badgeSpacing, y + cardH - 20, t, 0.9));
     } else {
-      text("???", cx, y + 50, 30, "#222a5a", "center");
-      text("Not yet caught", cx, y + cardH - 22, 10, "#4a5490", "center");
+      // Silhouette instead of "???": draw the mon in near-solid dark so its
+      // shape gives a hint without spoiling colours/details.
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.filter = "brightness(0)";
+      drawMon({species:sp}, cx, y + 58, 0.9, 0, "portrait");
+      ctx.filter = "none";
+      ctx.restore();
+      text(displayName(sp), cx, y + cardH - 42, 11, "#4a5490", "center");
+      // Show type name(s) too, so the dex hints at what to look for
+      const types = [sd.type, sd.type2].filter(Boolean);
+      const label = types.join(" / ").toUpperCase();
+      text(label, cx, y + cardH - 22, 9, "#5a648a", "center");
     }
   });
   // Bottom hint bar
@@ -2282,8 +2305,18 @@ function drawDexDetail() {
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
   // Top bar
   rrect(10, 14, W-20, 44, 14, "rgba(0,0,0,0.55)", "#4be0d0", 2);
-  text(`#${String(game.dexCursor+1).padStart(3,"0")}`, 24, 26, 14, "#ffcf3a");
-  text(caught ? displayName(sp) : "???", W/2, 24, 20, "#fff", "center");
+  const dexNum = typeof sd.dexOrder === "number" ? sd.dexOrder : (game.dexCursor+1);
+  text(`#${String(dexNum).padStart(3,"0")}`, 24, 26, 14, "#ffcf3a");
+  text(displayName(sp), W/2, 22, 18, "#fff", "center");
+  // Status pill (CAUGHT / NOT SEEN) — beneath the name for clarity
+  const stLabel = caught ? "CAUGHT" : "NOT SEEN";
+  const stCol = caught ? "#4bd07a" : "#5a5a72";
+  ctx.font = `800 10px ${UI_FONT}`;
+  const stW2 = ctx.measureText(stLabel).width + 14;
+  rrect(W/2 - stW2/2, 42, stW2, 14, 7, stCol);
+  ctx.fillStyle = caught ? "#0b1f14" : "#dcdce8";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(stLabel, W/2, 50);
   text("‹ L / R ›", W-24, 30, 11, "#c9f0ff", "right");
   // Big model area
   const cardX = 20, cardY = 74, cardW = W-40, cardH = 240;
@@ -2296,8 +2329,19 @@ function drawDexDetail() {
     const sx = W/2 - ((types.length-1)*spacing)/2;
     types.forEach((t, i) => drawTypeBadge(sx + i*spacing, cardY + cardH - 18, t, 1.05));
   } else {
-    text("???", W/2, cardY + cardH/2 - 40, 80, "#1a2050", "center");
-    text("Encounter one in the wild to reveal", W/2, cardY + cardH - 30, 12, "#c9c9ff", "center");
+    // Silhouette
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.filter = "brightness(0)";
+    drawMon({species:sp}, W/2, cardY + cardH/2, 2.1, 0, "portrait");
+    ctx.filter = "none";
+    ctx.restore();
+    // Type badges — visible so the trainer knows what to look for
+    const types = [sd.type, sd.type2].filter(Boolean);
+    const spacing = 60;
+    const sx = W/2 - ((types.length-1)*spacing)/2;
+    types.forEach((t, i) => drawTypeBadge(sx + i*spacing, cardY + cardH - 18, t, 1.05));
+    text("Encounter one in the wild to reveal", W/2, cardY + 22, 12, "#c9c9ff", "center");
   }
   // Stats panel
   const sY = cardY + cardH + 10;
