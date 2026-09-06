@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.10.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.11.0</title>
 <!-- Playful display + UI fonts (loaded by the tablet browser) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.10.0</div>
+  <div id="note">v0.11.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -66,7 +66,7 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.10.0
+// CroakyMon Gotta Catch Them All! — v0.11.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
@@ -76,6 +76,19 @@ const VERSION = "0.10.0";
 const DEFAULT_EVOLVE_AT_WINS = 3;
 // Per-game title shown in the logo and browser tab. Charlie's fork overrides this.
 const GAME_TITLE = "CroakyMon";
+// Per-game logo look: "sunset" (Sam's warm fire vibe) or "spooky" (Charlie's
+// teal-purple wobble). Extend drawLogo() with more presets over time.
+const GAME_LOGO_STYLE = "sunset";
+// Per-state music track filenames. Files live under assets/audio/ and load
+// lazily when a state first needs them. Missing files fall back silently to
+// the built-in WebAudio chiptune loop, so the game never breaks if the mp3s
+// haven't been dropped in yet.
+const GAME_MUSIC = {
+  title:  "assets/audio/town.mp3",
+  town:   "assets/audio/town.mp3",
+  battle: "assets/audio/battle.mp3",
+  win:    "assets/audio/town.mp3",
+};
 const W = 360, H = 640;
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -124,7 +137,7 @@ const Mon3D = (() => {
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
     // Lights: key + fill + rim, tuned for saturated cartoon materials.
-    // Values increased for v0.10.0 — earlier setup was reading dark on OLED tablets.
+    // Values increased for v0.11.0 — earlier setup was reading dark on OLED tablets.
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
@@ -239,6 +252,8 @@ const Audio = (() => {
   function setMuted(v) {
     muted = v;
     if (master) master.gain.value = v ? 0 : 0.7;
+    // Also mute/unmute the mp3 track (WebAudio graph doesn't cover it)
+    if (htmlAudio) htmlAudio.muted = v;
   }
   function toggleMute() { setMuted(!muted); return muted; }
   // ---- SFX primitives ----
@@ -329,10 +344,39 @@ const Audio = (() => {
       tone({freq:200, dur:0.12, type:"square", vol:0.3, slide:120});
     },
   };
-  // ---- Music: simple looping arpeggio, low-key so it doesn't fight SFX ----
+  // ---- Music: prefers a real mp3 (per state, from GAME_MUSIC) with graceful
+  //   fallback to the built-in chiptune loop when the file's missing or fails
+  //   to play (offline / not yet dropped in).
+  let htmlAudio = null;         // active <audio> element for real music
+  let htmlAudioMood = null;     // which mood it's currently playing
+  const failedUrls = new Set(); // don't retry mp3s that already 404'd this session
+  function startMp3(mood) {
+    const url = (typeof GAME_MUSIC === "object" && GAME_MUSIC[mood]) || null;
+    if (!url || failedUrls.has(url) || muted || !musicOn) return false;
+    if (htmlAudio && htmlAudioMood === mood && !htmlAudio.paused) return true;
+    stopHtmlAudio();
+    try {
+      htmlAudio = new window.Audio(url);
+      htmlAudio.loop = true;
+      htmlAudio.volume = 0.35;
+      htmlAudio.addEventListener("error", () => { failedUrls.add(url); htmlAudio = null; startSynthMusic(mood); });
+      const p = htmlAudio.play();
+      if (p && p.catch) p.catch(() => { /* autoplay blocked; will retry on gesture */ });
+      htmlAudioMood = mood;
+      return true;
+    } catch (e) { failedUrls.add(url); return false; }
+  }
+  function stopHtmlAudio() {
+    if (htmlAudio) { try { htmlAudio.pause(); htmlAudio.src = ""; } catch(e){} htmlAudio = null; htmlAudioMood = null; }
+  }
   function startMusic(mood) {
+    // Prefer the mp3 for this mood. If it works, silence the synth path.
+    if (startMp3(mood)) { stopSynthMusic(); return; }
+    startSynthMusic(mood);
+  }
+  function startSynthMusic(mood) {
     if (!ac || !musicOn) return;
-    stopMusic();
+    stopSynthMusic();
     const patterns = {
       town:   { root: 261.63, prog: [0, 4, 7, 4], tempo: 0.42, wave: "triangle" },
       battle: { root: 220.00, prog: [0, 3, 5, 7], tempo: 0.28, wave: "square" },
@@ -373,13 +417,17 @@ const Audio = (() => {
     }
     // Schedule next loop
     const total = totalSteps * noteLen;
-    musicNodes.loopTimer = setTimeout(() => startMusic(mood), total * 1000 - 100);
+    musicNodes.loopTimer = setTimeout(() => startSynthMusic(mood), total * 1000 - 100);
   }
-  function stopMusic() {
+  function stopSynthMusic() {
     if (musicNodes.loopTimer) clearTimeout(musicNodes.loopTimer);
     musicNodes.forEach(n => { try { n.stop(); } catch(e){} });
     musicNodes = [];
   }
+  function stopMusic() { stopHtmlAudio(); stopSynthMusic(); }
+  // Retry the mp3 on any first user interaction — browsers block autoplay
+  // until the user has gestured. ensureMusic() re-invokes startMusic on that
+  // tick, which will then be past the gate.
   return { ensure, resume, setMuted, toggleMute, SFX, startMusic, stopMusic,
            get isMuted() { return muted; } };
 })();
@@ -421,7 +469,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.10.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.11.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -494,7 +542,7 @@ function applyManifest(manifest) {
       shape:   entry.shape || base.shape || "blob",
       starter: entry.starter != null ? !!entry.starter : (base.starter || false),
       displayName: entry.name || null,
-      // Evolution (v0.10.0): `evolvesTo` is a kebab slug of the next form.
+      // Evolution (v0.11.0): `evolvesTo` is a kebab slug of the next form.
       // `evolvesAtWins` is how many battle victories the party mon needs before
       // it transforms (default 3). `evolutionOf` marks a mon as reachable ONLY
       // via evolution — it is excluded from wild encounters.
@@ -631,7 +679,7 @@ function text(str, x, y, size=12, color="#fff", align="left") {
 }
 
 // ==============================================================
-// UI kit (v0.10.0) — rounded rects, type badges, pill buttons.
+// UI kit (v0.11.0) — rounded rects, type badges, pill buttons.
 // ==============================================================
 function rrect(x, y, w, h, r, fill, stroke, sw) {
   const rr = Math.min(r, w/2, h/2);
@@ -701,7 +749,7 @@ function pillButton(x, y, w, h, label, opts) {
 // ==============================================================
 // Tiles / houses
 // ==============================================================
-// ---- Town tile art (v0.10.0 rework) ----
+// ---- Town tile art (v0.11.0 rework) ----
 // Small deterministic PRNG so per-tile decorations (flowers, cracks) stay stable
 // across frames and don't shimmer.
 function hashRand(x, y, salt) {
@@ -934,7 +982,7 @@ function drawMap() {
       drawRoof(x*TILE, y*TILE, "prof");
   }
 }
-// Chibi trainer sprite (v0.10.0) — outlined pixel-art style
+// Chibi trainer sprite (v0.11.0) — outlined pixel-art style
 function drawPlayer() {
   const p = game.player;
   let px, py;
@@ -1764,7 +1812,7 @@ function doFightTurn(moveKey) {
     }
   );
 }
-// v0.10.0 — evolution
+// v0.11.0 — evolution
 // Returns the PascalCase key of the mon's next form, or null if none applies.
 function evolutionTargetFor(mon) {
   if (!mon || !mon.species) return null;
@@ -1911,6 +1959,27 @@ function layoutMonsGrid(species, cx, topY, colGap, rowGap, perRow, pose, scale) 
 function drawLogo(cx, cy, tSec) {
   const word = GAME_TITLE;
   const size = 54;
+  // Per-game style presets — extend freely
+  const STYLES = {
+    // Sam: warm fire vibe — sunset gradient, chunky tilt, bouncy bob
+    sunset: {
+      grad:    [["#fff2a8",0], ["#ffcf3a",0.45], ["#e85a2a",1]],
+      outline: "#1a0a2a", outlineWidth: 8,
+      shadow:  "rgba(10,5,30,0.55)", shadowDx: 4, shadowDy: 5,
+      bounceAmp: 3, bounceHz: 3, tiltFn: (i) => Math.sin(i*0.7) * 0.06,
+      shine:   0.55, glow: 0,
+    },
+    // Charlie: spooky ghost vibe — teal→purple→pink gradient, wavy letters,
+    // cyan glow halo, slower sway
+    spooky: {
+      grad:    [["#c9f0ff",0], ["#8a72b8",0.45], ["#ff7fb8",1]],
+      outline: "#0a0518", outlineWidth: 9,
+      shadow:  "rgba(0,0,0,0.6)", shadowDx: 5, shadowDy: 5,
+      bounceAmp: 5, bounceHz: 1.8, tiltFn: (i, t) => Math.sin(t*2 + i*0.4) * 0.08,
+      shine:   0.35, glow: 18, glowColor: "#4be0d0",
+    },
+  };
+  const s = STYLES[GAME_LOGO_STYLE] || STYLES.sunset;
   ctx.save();
   ctx.font = `400 ${size}px ${LOGO_FONT}`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1923,33 +1992,39 @@ function drawLogo(cx, cy, tSec) {
     const ch = word[i];
     const half = widths[i] / 2;
     const bx = x + half;
-    const bounce = Math.sin(tSec*3 + i*0.55) * 3;
-    const tilt = Math.sin(i*0.7) * 0.06;
+    const bounce = Math.sin(tSec * s.bounceHz + i * 0.55) * s.bounceAmp;
+    const tilt = s.tiltFn(i, tSec);
     ctx.save();
     ctx.translate(bx, cy + bounce);
     ctx.rotate(tilt);
+    // Optional glow halo
+    if (s.glow > 0) {
+      ctx.shadowColor = s.glowColor;
+      ctx.shadowBlur  = s.glow + Math.sin(tSec*4 + i)*4;
+    }
     // drop shadow
-    ctx.fillStyle = "rgba(10,5,30,0.55)";
-    ctx.fillText(ch, 4, 5);
+    ctx.fillStyle = s.shadow;
+    ctx.fillText(ch, s.shadowDx, s.shadowDy);
     // thick outline
-    ctx.strokeStyle = "#1a0a2a"; ctx.lineWidth = 8; ctx.lineJoin = "round";
+    ctx.strokeStyle = s.outline; ctx.lineWidth = s.outlineWidth; ctx.lineJoin = "round";
     ctx.strokeText(ch, 0, 0);
-    // sunset gradient fill
+    // gradient fill
     const g = ctx.createLinearGradient(0, -size/2, 0, size/2);
-    g.addColorStop(0.00, "#fff2a8");
-    g.addColorStop(0.45, "#ffcf3a");
-    g.addColorStop(1.00, "#e85a2a");
+    for (const stop of s.grad) g.addColorStop(stop[1], stop[0]);
     ctx.fillStyle = g;
     ctx.fillText(ch, 0, 0);
     // shine on top edge
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(-widths[i]/2, -size/2, widths[i], size*0.28);
-    ctx.clip();
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = "#fff";
-    ctx.fillText(ch, 0, 0);
-    ctx.restore();
+    if (s.shine > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-widths[i]/2, -size/2, widths[i], size*0.28);
+      ctx.clip();
+      ctx.globalAlpha = s.shine;
+      ctx.fillStyle = "#fff";
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
     ctx.restore();
     x += widths[i] + 3;
   }
@@ -1958,15 +2033,17 @@ function drawLogo(cx, cy, tSec) {
 // Bouncy subtitle pill
 function drawSubtitle(cx, cy, tSec) {
   const label = "GOTTA CATCH THEM ALL!";
+  const pillCol = GAME_LOGO_STYLE === "spooky" ? "#ff7fb8" : "#4be0d0";
+  const inkCol  = GAME_LOGO_STYLE === "spooky" ? "#2a0e1f" : "#0b1f1c";
   ctx.font = "800 14px 'Fredoka', -apple-system, sans-serif";
   const w = ctx.measureText(label).width + 26, h = 26;
   const bob = Math.sin(tSec*2.5) * 1.5;
-  rrect(cx - w/2, cy - h/2 + bob, w, h, h/2, "#4be0d0", "#1a0a2a", 3);
+  rrect(cx - w/2, cy - h/2 + bob, w, h, h/2, pillCol, "#1a0a2a", 3);
   ctx.save();
   ctx.globalAlpha = 0.4;
   rrect(cx - w/2 + 4, cy - h/2 + bob + 3, w - 8, h/2 - 3, (h-6)/2, "#fff");
   ctx.restore();
-  ctx.fillStyle = "#0b1f1c"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = inkCol; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.font = "800 14px 'Fredoka', -apple-system, sans-serif";
   ctx.fillText(label, cx, cy + bob + 1);
 }
@@ -2200,7 +2277,7 @@ function drawHPBox(x, y, name, hp, maxHP) {
   text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
 }
 // ==============================================================
-// CroakyDex (v0.10.0) — a proper grid + detail view
+// CroakyDex (v0.11.0) — a proper grid + detail view
 // ==============================================================
 function updateDex() {
   if (game.dexView !== "detail") {
