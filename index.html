@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.9.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.10.0</title>
 <!-- Playful display + UI fonts (loaded by the tablet browser) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.9.0</div>
+  <div id="note">v0.10.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -66,11 +66,14 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.9.0
+// CroakyMon Gotta Catch Them All! — v0.10.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
-const VERSION = "0.9.0";
+const VERSION = "0.10.0";
+// Default win-count to trigger an evolution when a species declares evolvesTo
+// but doesn't override the threshold.
+const DEFAULT_EVOLVE_AT_WINS = 3;
 // Per-game title shown in the logo and browser tab. Charlie's fork overrides this.
 const GAME_TITLE = "CroakyMon";
 const W = 360, H = 640;
@@ -121,7 +124,7 @@ const Mon3D = (() => {
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
     // Lights: key + fill + rim, tuned for saturated cartoon materials.
-    // Values increased for v0.9.0 — earlier setup was reading dark on OLED tablets.
+    // Values increased for v0.10.0 — earlier setup was reading dark on OLED tablets.
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
@@ -418,7 +421,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.9.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.10.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -491,6 +494,16 @@ function applyManifest(manifest) {
       shape:   entry.shape || base.shape || "blob",
       starter: entry.starter != null ? !!entry.starter : (base.starter || false),
       displayName: entry.name || null,
+      // Evolution (v0.10.0): `evolvesTo` is a kebab slug of the next form.
+      // `evolvesAtWins` is how many battle victories the party mon needs before
+      // it transforms (default 3). `evolutionOf` marks a mon as reachable ONLY
+      // via evolution — it is excluded from wild encounters.
+      evolvesTo:     entry.evolvesTo     || base.evolvesTo     || null,
+      evolvesAtWins: entry.evolvesAtWins || base.evolvesAtWins || null,
+      evolutionOf:   entry.evolutionOf   || base.evolutionOf   || null,
+      // dexOrder controls CroakyDex ordering (ascending). Missing entries sort last.
+      dexOrder:      typeof entry.dexOrder === "number" ? entry.dexOrder :
+                     (typeof base.dexOrder === "number" ? base.dexOrder : 9999),
       _kebab:  kebab,
     };
     // Silently swap unknown move names for Tackle so a manifest typo never crashes battle.
@@ -501,7 +514,13 @@ function applyManifest(manifest) {
     if (!merged[key]) merged[key] = Object.assign({ _kebab: pascalToKebab(key) }, v);
   }
   SPECIES     = merged;
-  ALL_SPECIES = Object.keys(SPECIES);
+  // Ascending by dexOrder, then alphabetical fallback so a stable order emerges
+  // even if two entries share the same number.
+  ALL_SPECIES = Object.keys(SPECIES).sort((a, b) => {
+    const da = SPECIES[a].dexOrder, db = SPECIES[b].dexOrder;
+    if (da !== db) return da - db;
+    return a.localeCompare(b);
+  });
   STARTERS    = ALL_SPECIES.filter(k => SPECIES[k].starter);
   Mon3D.registerFromSpecies();
 }
@@ -517,7 +536,15 @@ function displayName(sp) {
 
 function makeMon(species) {
   const s = SPECIES[species];
-  return { species, type: s.type, type2: s.type2 || null, maxHP: s.maxHP, hp: s.maxHP, moves: s.moves.slice() };
+  return {
+    species,
+    type:  s.type,
+    type2: s.type2 || null,
+    maxHP: s.maxHP,
+    hp:    s.maxHP,
+    moves: s.moves.slice(),
+    wins:  0,  // battle wins with this instance — feeds evolution
+  };
 }
 function damage(attacker, defender, moveKey, rng) {
   const m = MOVES[moveKey];
@@ -604,7 +631,7 @@ function text(str, x, y, size=12, color="#fff", align="left") {
 }
 
 // ==============================================================
-// UI kit (v0.9.0) — rounded rects, type badges, pill buttons.
+// UI kit (v0.10.0) — rounded rects, type badges, pill buttons.
 // ==============================================================
 function rrect(x, y, w, h, r, fill, stroke, sw) {
   const rr = Math.min(r, w/2, h/2);
@@ -674,7 +701,7 @@ function pillButton(x, y, w, h, label, opts) {
 // ==============================================================
 // Tiles / houses
 // ==============================================================
-// ---- Town tile art (v0.9.0 rework) ----
+// ---- Town tile art (v0.10.0 rework) ----
 // Small deterministic PRNG so per-tile decorations (flowers, cracks) stay stable
 // across frames and don't shimmer.
 function hashRand(x, y, salt) {
@@ -907,7 +934,7 @@ function drawMap() {
       drawRoof(x*TILE, y*TILE, "prof");
   }
 }
-// Chibi trainer sprite (v0.9.0) — outlined pixel-art style
+// Chibi trainer sprite (v0.10.0) — outlined pixel-art style
 function drawPlayer() {
   const p = game.player;
   let px, py;
@@ -1645,8 +1672,12 @@ function drawProfessor(cx, cy) {
   rect(cx+32, cy+4, 10, 2, "#fff");
 }
 function enterBattle(forceWildDifferentFrom) {
-  const remaining = ALL_SPECIES.filter(s => !game.caught.has(s));
-  let pool = remaining.length ? remaining : ALL_SPECIES;
+  // Wild pool excludes evolved forms (`evolutionOf` set) — those are only
+  // reachable by evolving their base form.
+  const wildable = ALL_SPECIES.filter(s => !SPECIES[s].evolutionOf);
+  const remaining = wildable.filter(s => !game.caught.has(s));
+  let pool = remaining.length ? remaining : wildable;
+  if (!pool.length) pool = ALL_SPECIES; // absolute fallback
   if (forceWildDifferentFrom) { const f = pool.filter(s => s !== forceWildDifferentFrom); if (f.length) pool = f; }
   const wildSp = pool[Math.floor(rng()*pool.length)];
   const wild = makeMon(wildSp);
@@ -1703,7 +1734,12 @@ function doFightTurn(moveKey) {
       if (b.wild.hp <= 0) {
         lines.push(`Wild ${displayName(b.wild.species)} fainted!`, `It ran off before you could catch it.`);
         Audio.SFX.faint();
-        showMsg(lines, () => { b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+        b.active.wins = (b.active.wins || 0) + 1;
+        const evolveTo = evolutionTargetFor(b.active);
+        showMsg(lines, () => {
+          if (evolveTo) return startEvolution(b.active, evolveTo, () => { b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0; });
+          b.ended = true; b.turnLock = false; b.menu = "root"; b.cursor = 0;
+        });
         return;
       }
       // Enemy turn
@@ -1728,6 +1764,45 @@ function doFightTurn(moveKey) {
     }
   );
 }
+// v0.10.0 — evolution
+// Returns the PascalCase key of the mon's next form, or null if none applies.
+function evolutionTargetFor(mon) {
+  if (!mon || !mon.species) return null;
+  const sd = SPECIES[mon.species];
+  if (!sd || !sd.evolvesTo) return null;
+  const targetKey = kebabToPascal(sd.evolvesTo);
+  if (!SPECIES[targetKey]) return null;                  // manifest missing the target
+  const threshold = sd.evolvesAtWins || DEFAULT_EVOLVE_AT_WINS;
+  return (mon.wins >= threshold) ? targetKey : null;
+}
+// Plays a short evolution scene as a message chain, swaps species in place, then
+// calls `then` when the player dismisses the final line.
+function startEvolution(mon, targetKey, then) {
+  const fromName = displayName(mon.species);
+  const toName   = displayName(targetKey);
+  Audio.SFX.win();
+  showMsg([
+    `What?! ${fromName} is evolving!`,
+    `... ... ...`,
+    `Congratulations! ${fromName} evolved into ${toName}!`,
+  ], () => {
+    // Swap species + inherit stats appropriately
+    const newSd = SPECIES[targetKey];
+    mon.species = targetKey;
+    mon.type    = newSd.type;
+    mon.type2   = newSd.type2 || null;
+    mon.moves   = newSd.moves.slice();
+    // Keep hp fraction — but at least full-heal a little for the drama
+    const frac  = Math.max(0.6, mon.hp / mon.maxHP);
+    mon.maxHP   = newSd.maxHP;
+    mon.hp      = Math.min(newSd.maxHP, Math.round(newSd.maxHP * frac));
+    mon.wins    = 0;
+    // Register in the dex so the evolved form appears in the CroakyDex
+    game.caught.add(targetKey);
+    if (then) then();
+  });
+}
+
 function effLine(eff, dmg) {
   if (eff > 1.5) return `It's super effective! (${dmg})`;
   if (eff < 0.9) return `It's not very effective... (${dmg})`;
@@ -2125,7 +2200,7 @@ function drawHPBox(x, y, name, hp, maxHP) {
   text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
 }
 // ==============================================================
-// CroakyDex (v0.9.0) — a proper grid + detail view
+// CroakyDex (v0.10.0) — a proper grid + detail view
 // ==============================================================
 function updateDex() {
   if (game.dexView !== "detail") {

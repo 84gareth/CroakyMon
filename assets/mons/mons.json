@@ -2,6 +2,7 @@
   "bolttoad": {
     "accent": "#fff2a8",
     "color": "#f2c744",
+    "dexOrder": 50,
     "hp": 32,
     "moves": [
       "ThunderWay",
@@ -17,6 +18,7 @@
   "crimson-fungus": {
     "accent": "#ffd05a",
     "color": "#e85a2a",
+    "dexOrder": 10,
     "hp": 34,
     "moves": [
       "HotDiggityDoggyDog",
@@ -32,6 +34,7 @@
   "tidefrog": {
     "accent": "#c9f0ff",
     "color": "#3a9be0",
+    "dexOrder": 30,
     "hp": 36,
     "moves": [
       "SharkWave",
@@ -47,6 +50,7 @@
   "vinehop": {
     "accent": "#c4f770",
     "color": "#4fbf5a",
+    "dexOrder": 40,
     "hp": 36,
     "moves": [
       "TreeStomp",
