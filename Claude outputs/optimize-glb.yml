@@ -1,0 +1,59 @@
+name: Optimize GLB assets
+
+# Trigger only when a GLB in assets/mons/ changes. Uses [skip optimize] in the
+# bot's own commit message to prevent infinite loops. Always continues on
+# per-file failure so one bad export can't red-X the whole run.
+
+on:
+  push:
+    paths:
+      - 'assets/mons/**.glb'
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: "!contains(github.event.head_commit.message, '[skip optimize]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install gltf-transform + sharp (pinned)
+        run: npm install -g @gltf-transform/cli@4 sharp@0.33.5
+
+      - name: Optimise GLBs (best effort)
+        continue-on-error: true
+        run: |
+          set +e
+          shopt -s nullglob
+          for f in assets/mons/*.glb; do
+            [ -f "$f" ] || continue
+            before=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")
+            tmp="${f}.tmp.glb"
+            echo "--- Optimising $f ($before bytes)"
+            gltf-transform optimize "$f" "$tmp" \
+              --compress meshopt \
+              --texture-compress webp \
+              --texture-size 1024 \
+              && mv "$tmp" "$f"
+            rm -f "$tmp"
+            after=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")
+            echo "    $f: $before -> $after bytes"
+          done
+          exit 0
+
+      - name: Commit optimised assets
+        run: |
+          git config user.name  "gltf-optimizer"
+          git config user.email "gltf-optimizer@users.noreply.github.com"
+          git add 'assets/mons/**.glb' || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(assets): optimise GLBs [skip optimize]"
+            git push
+          else
+            echo "No changes after optimisation."
+          fi
