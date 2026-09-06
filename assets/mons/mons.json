@@ -1,4 +1,18 @@
 {
+  "beatboxer": {
+    "accent": "#e0e0e0",
+    "color": "#a8a8a8",
+    "hp": 30,
+    "moves": [
+      "Tackle"
+    ],
+    "name": "Beatboxer",
+    "shape": "blob",
+    "starter": false,
+    "types": [
+      "normal"
+    ]
+  },
   "bolttoad": {
     "accent": "#fff2a8",
     "color": "#f2c744",
