@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>CroakyMon Gotta Catch Them All! v0.12.0</title>
+<title>CroakyMon Gotta Catch Them All! v0.13.0</title>
 <!-- Playful display + UI fonts (loaded by the tablet browser) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
 
 <div id="stage"><div id="frame">
   <canvas id="c" width="360" height="640"></canvas>
-  <div id="note">v0.12.0</div>
+  <div id="note">v0.13.0</div>
   <div id="topbar"><button id="muteBtn">SOUND: ON</button></div>
   <div id="hud">
     <div class="pad" id="pad">
@@ -66,11 +66,11 @@
 </div></div>
 <script>
 "use strict";
-// CroakyMon Gotta Catch Them All! — v0.12.0
+// CroakyMon Gotta Catch Them All! — v0.13.0
 // Additions this version: varied creature designs (dragon whelp, lightning bird,
 // sprout turtle, ink squid), VFX for every move, WebAudio SFX + light music loop.
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 // Default win-count to trigger an evolution when a species declares evolvesTo
 // but doesn't override the threshold.
 const DEFAULT_EVOLVE_AT_WINS = 3;
@@ -89,6 +89,10 @@ const GAME_MUSIC = {
   battle: "assets/audio/battle.mp3",
   win:    "assets/audio/town.mp3",
 };
+// Optional per-game splash-screen background image. When set (relative path),
+// the title screen draws it fullbleed and hides the polygon monster grid.
+// Set to null on games that want the classic hills + mons layout (Sam's).
+const GAME_TITLE_BG = null;
 const W = 360, H = 640;
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -137,7 +141,7 @@ const Mon3D = (() => {
     camera.position.set(0, 1.2, 5.5);
     camera.lookAt(0, 1.0, 0);
     // Lights: key + fill + rim, tuned for saturated cartoon materials.
-    // Values increased for v0.12.0 — earlier setup was reading dark on OLED tablets.
+    // Values increased for v0.13.0 — earlier setup was reading dark on OLED tablets.
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
     key.position.set(3, 4, 4);
     scene.add(key);
@@ -469,7 +473,7 @@ document.querySelectorAll("[data-k]").forEach(btn => {
 // ==============================================================
 // Game data
 // ==============================================================
-// Type chart. Ghost added in v0.12.0 (CryptyCrab). normal <-> ghost is 0.5 both
+// Type chart. Ghost added in v0.13.0 (CryptyCrab). normal <-> ghost is 0.5 both
 // ways (not the classical 0x) so a battle can never be un-winnable — this game
 // is for kids.
 const EFF = {
@@ -541,13 +545,13 @@ function applyManifest(manifest) {
       moves:   Array.isArray(entry.moves) && entry.moves.length ? entry.moves : (base.moves ? base.moves.slice() : ["Tackle"]),
       shape:   entry.shape || base.shape || "blob",
       starter: entry.starter != null ? !!entry.starter : (base.starter || false),
-      // v0.12.0 — sharing between per-kid games.
+      // v0.13.0 — sharing between per-kid games.
       // shared:true means "this creature belongs in BOTH Sam's and Charlie's
       // games". A future sync workflow will mirror shared entries between
       // the two repos; today it's metadata only.
       shared:  entry.shared != null ? !!entry.shared : (base.shared || false),
       displayName: entry.name || null,
-      // Evolution (v0.12.0): `evolvesTo` is a kebab slug of the next form.
+      // Evolution (v0.13.0): `evolvesTo` is a kebab slug of the next form.
       // `evolvesAtWins` is how many battle victories the party mon needs before
       // it transforms (default 3). `evolutionOf` marks a mon as reachable ONLY
       // via evolution — it is excluded from wild encounters.
@@ -684,7 +688,7 @@ function text(str, x, y, size=12, color="#fff", align="left") {
 }
 
 // ==============================================================
-// UI kit (v0.12.0) — rounded rects, type badges, pill buttons.
+// UI kit (v0.13.0) — rounded rects, type badges, pill buttons.
 // ==============================================================
 function rrect(x, y, w, h, r, fill, stroke, sw) {
   const rr = Math.min(r, w/2, h/2);
@@ -754,7 +758,7 @@ function pillButton(x, y, w, h, label, opts) {
 // ==============================================================
 // Tiles / houses
 // ==============================================================
-// ---- Town tile art (v0.12.0 rework) ----
+// ---- Town tile art (v0.13.0 rework) ----
 // Small deterministic PRNG so per-tile decorations (flowers, cracks) stay stable
 // across frames and don't shimmer.
 function hashRand(x, y, salt) {
@@ -987,7 +991,7 @@ function drawMap() {
       drawRoof(x*TILE, y*TILE, "prof");
   }
 }
-// Chibi trainer sprite (v0.12.0) — outlined pixel-art style
+// Chibi trainer sprite (v0.13.0) — outlined pixel-art style
 function drawPlayer() {
   const p = game.player;
   let px, py;
@@ -1817,7 +1821,7 @@ function doFightTurn(moveKey) {
     }
   );
 }
-// v0.12.0 — evolution
+// v0.13.0 — evolution
 // Returns the PascalCase key of the mon's next form, or null if none applies.
 function evolutionTargetFor(mon) {
   if (!mon || !mon.species) return null;
@@ -2053,7 +2057,49 @@ function drawSubtitle(cx, cy, tSec) {
   ctx.fillText(label, cx, cy + bob + 1);
 }
 
+// Optional splash-image support (v0.13.0). Preloaded once; if the fetch fails
+// the title falls back to the polygon hills + mons layout.
+let titleBgImg = null;
+if (typeof GAME_TITLE_BG === "string" && GAME_TITLE_BG) {
+  titleBgImg = new window.Image();
+  titleBgImg.onerror = () => { titleBgImg = null; };
+  titleBgImg.src = GAME_TITLE_BG;
+}
+
 function drawTitle() {
+  // If a splash-bg image is set and ready, draw it fullbleed (cover-fit) and
+  // skip the polygon hills + monster grid — the image IS the composition.
+  const bgReady = titleBgImg && titleBgImg.complete && titleBgImg.naturalWidth > 0;
+  if (bgReady) {
+    const iw = titleBgImg.naturalWidth, ih = titleBgImg.naturalHeight;
+    const scale = Math.max(W/iw, H/ih);
+    const dw = iw*scale, dh = ih*scale;
+    clear("#0a0518");
+    ctx.drawImage(titleBgImg, (W-dw)/2, (H-dh)/2, dw, dh);
+    // Subtle dim behind text areas for legibility
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(0, 0, W, 200);
+    ctx.fillRect(0, H-160, W, 160);
+    // Bounce logo + subtitle + press-start pill on top of the image
+    const t = performance.now() / 1000;
+    drawLogo(W/2, 88, t);
+    drawSubtitle(W/2, 138, t);
+    ctx.save();
+    ctx.font = "800 10px 'Fredoka', -apple-system, sans-serif";
+    const vLabel = "v" + VERSION;
+    const vw = ctx.measureText(vLabel).width + 12;
+    rrect(W/2 - vw/2, 158, vw, 16, 8, "rgba(0,0,0,0.5)");
+    ctx.fillStyle = "#c9f0ff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(vLabel, W/2, 166);
+    ctx.restore();
+    const btnW = 240, btnH = 46;
+    const bob = Math.sin(t*4) * 3;
+    pillButton(W/2 - btnW/2, 500 + bob, btnW, btnH, "PRESS A TO START",
+               { focused:true, fontSize:16 });
+    text("Fundude Town awaits", W/2, 560, 12, "#c9c9ff", "center");
+    if (pressed.a) { Audio.SFX.select(); game.state = STATE.CHOOSE; }
+    return;
+  }
   clear("#1a1e46");
   ctx.fillStyle = "#2a3d7a";
   ctx.beginPath(); ctx.moveTo(0, 300); ctx.lineTo(120, 220); ctx.lineTo(240, 320); ctx.lineTo(360, 230); ctx.lineTo(360, 400); ctx.lineTo(0, 400); ctx.closePath(); ctx.fill();
@@ -2282,7 +2328,7 @@ function drawHPBox(x, y, name, hp, maxHP) {
   text(`${hp}/${maxHP}`, x+162, y+6, 10, "#c9f0ff", "right");
 }
 // ==============================================================
-// CroakyDex (v0.12.0) — a proper grid + detail view
+// CroakyDex (v0.13.0) — a proper grid + detail view
 // ==============================================================
 function updateDex() {
   if (game.dexView !== "detail") {
